@@ -440,7 +440,11 @@ async def get_image_cq(
                 )
             else:
                 image.save(tmp_path)
-            return f'[CQ:image,file=file://{os.path.abspath(tmp_path)}]'
+            
+            import base64
+            with open(tmp_path, 'rb') as f:
+                b64_data = base64.b64encode(f.read()).decode('utf-8')
+            return f'[CQ:image,file=base64://{b64_data}]'
 
     except Exception as e:
         if allow_error: 
