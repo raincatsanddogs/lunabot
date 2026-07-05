@@ -1,5 +1,34 @@
-query_interval: 2                 # 向卫星地图查询的间隔（s）
-queue_consume_interval: 1         # 队列消费间隔（s）
-query_offset: -1000               # 查询时间的偏移量 (ms)
-disconnect_notify_count: 60       # 和服务器断联多少次后提醒 (s)
-player_time_update_interval: 60   # 超过多少秒自动更新玩家在线时间 (s)
+enabled: true
+
+minecraft:
+  ws_urls: {}
+  access_token: ""
+
+ignore_message_header: ["/", "."]
+command_priority: 98
+command_block: true
+notice_connected: true
+send_group_name: false
+display_server_name: true
+say_way: "："
+chat_image_enable: false
+
+status:
+  query_interval: 2
+  query_offset: -1000
+  disconnect_notify_count: 60
+
+servers:
+  Server:
+    rcon_msg: false
+    groups:
+      - group_id: "12345678"
+        adapter: "onebot"
+        bot_id: "机器人QQ号"
+        # listen_mode: off 关闭互通；dynamicmap 仅查询卫星地图状态；queqiao 使用鹊桥双向互通
+        listen_mode: "off"
+        url: ""
+        info: ""
+        chatprefix: "[Server] "
+        notify_on: true
+    guilds: []
