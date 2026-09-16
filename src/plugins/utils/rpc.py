@@ -78,6 +78,7 @@ def start_rpc_service(
     logger: Logger, 
     on_connect: Callable = None,
     on_disconnect: Callable = None, 
+    max_message_bytes: int = 1024 * 1024,
 ):
     """
     启动RPC服务。
@@ -96,7 +97,7 @@ def start_rpc_service(
         try:
             async with aiorpcx.serve_ws(
                 get_session_factory(name, logger, on_connect, on_disconnect), 
-            host, port):
+            host, port, max_size=max_message_bytes):
                 logger.info(f'{name}RPC服务已启动 ws://{host}:{port}')
                 await asyncio.sleep(1e9)
         except asyncio.exceptions.CancelledError:

@@ -1,176 +1,269 @@
-from ..record.sql import query_recent_msg
 from ..record import before_record_hook
 from ..utils import *
 from ..utils.rpc import *
-from ..llm import ChatSession, ChatSessionResponse, get_text_embedding, download_image_to_b64
+from ..llm import ChatSession, get_text_embedding, describe_embedding_model
+from ..llm.api_provider_manager import api_provider_mgr
+from src.services.autochat.store import Store
+from src.services.autochat.types import Event as AutochatEvent, Scope, PROTOCOL_VERSION
+from src.services.autochat.management import (
+    parse_command,
+    requires_admin,
+    operation_id,
+    format_result,
+    WRITES,
+)
 
 config = Config('chat.autochat')
-logger = get_logger("Chat")
-file_db = get_file_db("data/chat/db.json", logger)
-
+logger = get_logger('Chat')
+file_db = get_file_db('data/chat/db.json', logger)
 chat_gwl = get_group_white_list(file_db, logger, 'chat')
 autochat_gwl = get_group_white_list(file_db, logger, 'autochat', is_service=False)
+_store = None
+_sessions = {}
+_engine_id = None
+RPC_SERVICE = 'autochat'
+_rpc_token = config.get('rpc.token')
+_rpc_consumer_id = config.get('rpc.consumer_id', 'autochat')
 
 
-# ------------------------------ 新聊天 ------------------------------ #
+def get_autochat_store():
+    global _store
+    if _store is None:
+        _store = Store('data/chat/autochat/bridge')
+        _store.recover_actions()
+    return _store
 
-# 为每个客户端分别存储的新消息
-message_pool: dict[str, list[dict]] = {}
 
-# 记录新消息
 @before_record_hook
 async def record_new_message(bot: Bot, event: MessageEvent):
-    global message_pool
-    if not is_group_msg(event): return
-    if not chat_gwl.check_id(event.group_id): return
-    if not autochat_gwl.check_id(event.group_id): return
-    user_name = get_user_name_by_event(event)
-    msg = {
-        'msg_id': event.message_id,
-        'time': event.time,
-        'user_id': event.user_id,
-        'group_id': event.group_id,
-        'nickname': user_name,
-        'msg': get_msg(event),
-    }
-    for cid in message_pool:
-        message_pool[cid].append(msg)
+    if not is_group_msg(event) or str(event.user_id) == str(bot.self_id):
+        return
+    if not chat_gwl.check_id(event.group_id) or not autochat_gwl.check_id(event.group_id):
+        return
+    if event.message.extract_plain_text().strip().startswith(('/um', '/autochat um')):
+        return
+    get_autochat_store().add_event(
+        AutochatEvent(
+            str(bot.self_id),
+            str(event.group_id),
+            str(event.message_id),
+            str(event.user_id),
+            float(event.time),
+            get_msg(event),
+            get_user_name_by_event(event),
+        ),
+        time.time(),
+    )
 
 
-# ------------------------------ RPC服务 ------------------------------ #
+def on_connect(session):
+    _sessions[session.id] = session
 
-RPC_SERVICE = 'autochat'
 
-def on_connect(session: RpcSession):
-    message_pool[session.id] = []
+def on_disconnect(session):
+    global _engine_id
+    _sessions.pop(session.id, None)
+    if _engine_id == session.id:
+        _engine_id = None
 
-def on_disconnect(session: RpcSession):
-    if session.id in message_pool:
-        del message_pool[session.id]
 
 start_rpc_service(
     host=config.get('rpc.host'),
     port=config.get('rpc.port'),
-    token=config.get('rpc.token'),
+    token=_rpc_token,
     name=RPC_SERVICE,
     logger=logger,
     on_connect=on_connect,
-    on_disconnect=on_disconnect
+    on_disconnect=on_disconnect,
+    max_message_bytes=config.get('rpc.max_message_bytes', 128 * 1024 * 1024),
 )
 
 
-# 获取自身信息
-@rpc_method(RPC_SERVICE, 'get_self_info')
-async def handle_get_self_info(cid: str, group_id: int):
-    bot = await aget_group_bot(group_id, raise_exc=True)
+def check_protocol(version):
+    if version != PROTOCOL_VERSION:
+        raise ValueError('Unsupported autochat protocol; expected v3')
+
+
+@rpc_method(RPC_SERVICE, 'register_engine')
+async def handle_register_engine(cid, version, consumer_id):
+    global _engine_id
+    check_protocol(version)
+    if _engine_id and _engine_id != cid and _engine_id in _sessions:
+        raise ValueError('Another autochat engine is already connected')
+    if consumer_id != _rpc_consumer_id:
+        raise ValueError('Unexpected engine consumer_id')
+    _engine_id = cid
+    return {'protocol_version': PROTOCOL_VERSION}
+
+
+@rpc_method(RPC_SERVICE, 'describe_models')
+async def handle_describe_models(cid, version, names):
+    check_protocol(version)
+    result = {}
+    for name in names:
+        embedding = describe_embedding_model(name)
+        if embedding is not None:
+            result[name] = embedding
+            continue
+        model = api_provider_mgr.find_model(name)
+        result[name] = {
+            **model.provider.describe_model(model.get_model_id()),
+            'multimodal': model.is_multimodal,
+            'tools': model.supports_tools,
+            'parallel_tools': model.supports_parallel_tools,
+            'context_window': model.max_token,
+        }
+    return result
+
+
+@rpc_method(RPC_SERVICE, 'query_llm')
+async def handle_query_llm(cid, request):
+    check_protocol(request['protocol_version'])
+    session = ChatSession()
+    session.content = request['messages']
+    session.has_image = any(
+        isinstance(m.get('content'), list)
+        and any(p.get('type') == 'image_url' for p in m['content'])
+        for m in session.content
+    )
+    opts = request.get('options', {})
+    response = await session.get_response(
+        request['model'],
+        tools=request.get('tools', []),
+        timeout=opts.get('timeout', 120),
+        max_tokens=opts.get('max_tokens', 2048),
+    )
     return {
-        'self_id': int(bot.self_id),
-        'nickname': await get_group_member_name(group_id, int(bot.self_id)),
+        'assistant_message': response.assistant_message,
+        'tool_calls': response.tool_calls,
+        'provider_state': response.provider_state,
+        'usage': response.usage,
+        'finish_reason': response.finish_reason,
     }
 
-# 获取所有开启的群组列表
-@rpc_method(RPC_SERVICE, 'get_group_list')
-async def handle_get_group_list(cid: str):
-    group_ids = set(chat_gwl.get()).intersection(autochat_gwl.get())
-    return [g for g in await get_all_bot_group_list() if int(g['group_id']) in group_ids]
 
-# 发送群消息
-@rpc_method(RPC_SERVICE, 'send_group_msg')
-async def handle_send_group_msg(cid: str, group_id: int, message: list[dict] | str):
-    if not chat_gwl.check_id(group_id) or not autochat_gwl.check_id(group_id):
-        logger.warning(f"自动聊天取消发送消息到未启用群组 {group_id}")
-        return
-    bot = await aget_group_bot(group_id, raise_exc=True)
-    if isinstance(message, str):
-        message=Message(message)
-    logger.info(f"自动聊天RPC客户端 {cid} 发送消息到群 {group_id}: {message}")
-    return await bot.send_group_msg(group_id=int(group_id), message=message)
-
-# 从数据库获取指定群历史聊天记录
-@rpc_method(RPC_SERVICE, 'get_group_history_msg')
-async def handle_get_group_msg(cid: str, group_id: int, limit: int):
-    msgs = await query_recent_msg(group_id, limit)
-    ret = []
-    for msg in msgs:
-        if check_is_bot_reply_msg(msg['msg_id']):
-            continue
-        if isinstance(msg['time'], datetime):
-           msg['time'] = int(msg['time'].timestamp())
-        ret.append(msg)
-    return ret
-
-# 请求LLM
-@rpc_method(RPC_SERVICE, 'query_llm')
-async def handle_query_llm(cid: str, model: str | list[str], text: str, images: list[str], options: dict):
-    timeout: int = options.get('timeout', 300)
-    max_tokens: int = options.get('max_tokens', 2048)
-    json_reply: bool = options.get('json_reply', False)
-    json_key_restraints: list[dict] = options.get('json_key_restraints', [])
-
-    imgs = []
-    for img in images:
-        if img.startswith('http'):
-            img = await download_image_to_b64(img)
-        imgs.append(img)
-
-    session = ChatSession()
-    session.append_user_content(text, imgs, verbose=False)
-
-    def process(resp: ChatSessionResponse) -> str | dict:
-        text = resp.result
-        if not json_reply:
-            return text
-        
-        try: 
-            start_idx = text.find('{')
-            end_idx = text.rfind('}')
-            text = text[start_idx:end_idx+1]
-            data = loads_json(text)
-        except:
-            raise Exception("解析回复为json失败")
-        for restraint in json_key_restraints:
-            key = restraint['key']
-            dtypes = restraint.get('type')
-            if isinstance(dtypes, str):
-                dtypes = [dtypes]
-            min_length = restraint.get('min_length')
-            max_length = restraint.get('max_length')
-            key = key.split('.')
-            value = data
-            for k in key:
-                if k not in value:
-                    raise Exception(f"回复的json缺少字段: {restraint['key']}")
-                value = value[k]
-            if dtypes and not any(isinstance(value, eval(dt)) for dt in dtypes):
-                raise Exception(f"字段 {restraint['key']} 类型错误，期望类型: {dtypes}")
-            if isinstance(value, (str, list)):
-                if min_length and len(value) < min_length:
-                    raise Exception(f"字段 {restraint['key']} 长度过短，最小长度: {min_length}")
-                if max_length and len(value) > max_length:
-                    raise Exception(f"字段 {restraint['key']} 长度过长，最大长度: {max_length}")
-        return data
-
-    logger.info(f"自动聊天RPC客户端 {cid} 请求LLM模型")
-    return await session.get_response(
-        model_name=model,
-        process_func=process,
-        timeout=timeout,
-        max_tokens=max_tokens,
-    )
-
-# 请求获取文本嵌入
 @rpc_method(RPC_SERVICE, 'query_embedding')
-async def handle_query_embedding(cid: str, texts: list[str], model_name: str):
-    logger.info(f"自动聊天RPC客户端 {cid} 请求 {len(texts)} 条文本嵌入")
-    embeddings = await get_text_embedding(texts, model_name)
-    return embeddings
+async def handle_query_embedding(cid, version, texts, model):
+    check_protocol(version)
+    embeddings, usage = await get_text_embedding(texts, model, with_usage=True)
+    return {'embeddings': embeddings, 'usage': usage}
 
-# 获取新消息，获取后清空
-@rpc_method(RPC_SERVICE, 'get_new_msgs')
-async def handle_get_new_msgs(cid: str):
-    if cid not in message_pool:
-        return []
-    msgs = message_pool.get(cid, [])
-    message_pool[cid] = []
-    return msgs
 
+@rpc_method(RPC_SERVICE, 'poll_events')
+async def handle_poll_events(cid, version, consumer_id, after, limit):
+    check_protocol(version)
+    store = get_autochat_store()
+    enabled = {
+        s.key: chat_gwl.check_id(int(s.group_id)) and autochat_gwl.check_id(int(s.group_id))
+        for s in store.scopes()
+    }
+    for key in store.get('managed_scopes', []):
+        gid = int(key.split(':', 1)[1])
+        enabled[key] = chat_gwl.check_id(gid) and autochat_gwl.check_id(gid)
+    rows = store.db.execute(
+        'SELECT seq,payload FROM events WHERE seq>? ORDER BY seq LIMIT ?',
+        (max(0, int(after)), min(100, max(1, int(limit)))),
+    ).fetchall()
+    return {
+        'protocol_version': PROTOCOL_VERSION,
+        'events': [{**loads_json(r['payload']), 'seq': r['seq']} for r in rows],
+        'enabled': enabled,
+    }
+
+
+@rpc_method(RPC_SERVICE, 'ack_events')
+async def handle_ack_events(cid, version, consumer_id, cursor):
+    check_protocol(version)
+    store, key = get_autochat_store(), 'consumer:' + str(consumer_id)
+    store.set(key, max(store.get(key, 0), int(cursor)))
+    return {'cursor': store.get(key)}
+
+
+@rpc_method(RPC_SERVICE, 'send_action')
+async def handle_send_action(cid, version, consumer_id, bot_id, group_id, action_id, segments):
+    check_protocol(version)
+    gid = int(group_id)
+    if not chat_gwl.check_id(gid) or not autochat_gwl.check_id(gid):
+        return {'state': 'cancelled', 'reason': 'group_disabled'}
+    bot = await aget_group_bot(gid, raise_exc=True)
+    if str(bot.self_id) != str(bot_id):
+        return {'state': 'failed', 'reason': 'bot_scope_mismatch'}
+    if not isinstance(segments, list) or any(
+        s.get('type') not in ('text', 'at', 'reply') for s in segments
+    ):
+        raise ValueError('Unsupported message segments')
+    scope, store = Scope(str(bot_id), str(group_id)), get_autochat_store()
+    key = scope.key + ':' + str(consumer_id) + ':' + str(action_id)
+    action = store.start_action(key, scope, {'segments': segments})
+    if action['state'] != 'pending':
+        return {
+            'state': action['state'] if action['state'] != 'sending' else 'unknown',
+            **(action['result'] or {}),
+        }
+    store.finish_action(key, 'sending', {})
+    try:
+        response = await bot.send_group_msg(
+            group_id=gid, message=Message(action['payload']['segments'])
+        )
+        store.finish_action(key, 'sent', response)
+        return {'state': 'sent', **response}
+    except Exception:
+        store.finish_action(key, 'unknown', {})
+        return {'state': 'unknown'}
+
+
+async def memory_permission(ctx):
+    if check_superuser(ctx.event):
+        return True
+    try:
+        member = await ctx.bot.call_api(
+            'get_group_member_info', group_id=ctx.group_id, user_id=ctx.user_id, no_cache=True
+        )
+        return member.get('role') in ('owner', 'admin')
+    except Exception:
+        return False
+
+
+async def handle_memory_command(ctx):
+    if not is_group_msg(ctx.event):
+        return await ctx.asend_reply_msg('请在需要管理记忆的群内使用此指令')
+    try:
+        command = parse_command(ctx.get_args().strip(), ctx.get_at_qids(), ctx.user_id)
+        admin = await memory_permission(ctx)
+        if requires_admin(command) and not admin:
+            return await ctx.asend_reply_msg(
+                '此操作需要本群群主、管理员或超级管理权限；身份查询失败时不能编辑'
+            )
+        session = _sessions.get(_engine_id)
+        if session is None:
+            return await ctx.asend_reply_msg('autochat 会话服务离线，记忆操作未提交')
+        scope = Scope(str(ctx.bot.self_id), str(ctx.group_id))
+        if command['op'] in WRITES and command.get('subjects'):
+            for uid in command['subjects']:
+                await ctx.bot.call_api(
+                    'get_group_member_info', group_id=ctx.group_id, user_id=int(uid), no_cache=True
+                )
+        store = get_autochat_store()
+        store.set('managed_scopes', sorted(set(store.get('managed_scopes', [])) | {scope.key}))
+        payload = {
+            'bot_id': scope.bot_id,
+            'group_id': scope.group_id,
+            'actor_id': str(ctx.user_id),
+            'message_id': str(ctx.message_id),
+            'admin': admin,
+            'command': command,
+        }
+        try:
+            result = await asyncio.wait_for(
+                session.send_request('manage_memory', [_rpc_token, PROTOCOL_VERSION, payload]), 10
+            )
+        except (asyncio.TimeoutError, ConnectionError, OSError):
+            if command['op'] in WRITES:
+                oid = operation_id(scope, ctx.user_id, ctx.message_id)
+                return await ctx.asend_reply_msg(
+                    f'操作结果待确认，勿重复新增。查询：/um operation {oid}'
+                )
+            return await ctx.asend_reply_msg('会话服务暂时无法响应，请稍后查询')
+        return await ctx.asend_fold_msg_adaptive(format_result(result))
+    except (ValueError, PermissionError, aiorpcx.RPCError) as exc:
+        return await ctx.asend_reply_msg(str(exc))

@@ -729,40 +729,9 @@ async def _(ctx: HandlerContext):
         raise Exception(f"翻译失败: {e}")
 
 
-# 查询autochat用户记忆
-autochat_usermemory = CmdHandler([
-    "/autochat um", "/um", "/autochat usermemory", "/usermemory"
-], logger)
-autochat_usermemory.check_cdrate(chat_cd).check_wblist(autochat_gwl)
+# 自动聊天记忆管理；权限在子命令处理层验证，与自动发言开关独立。
+autochat_usermemory = CmdHandler(["/autochat um", "/um"], logger, use_seg_cmd=False)
+autochat_usermemory.check_cdrate(chat_cd)
 @autochat_usermemory.handle()
 async def _(ctx: HandlerContext):
-    qids = ctx.get_at_qids()
-    if not qids:
-        qid = ctx.user_id
-    else:
-        qid = qids[0]
-
-    nickname = await get_group_member_name(ctx.group_id, qid)
-
-    um = None
-    path = f"data/chat/autochat/memory_{ctx.group_id}.json"
-    if os.path.exists(path):
-        mem = load_json(path)
-        um = mem.get("ums", {}).get(str(qid), {})
-    
-    if not um:
-        return await ctx.asend_reply_msg(f"对@{nickname}的记忆: 无")
-
-    um_text = f"对@{nickname}的记忆\n"
-    if names := um.get('names'):
-        um_text += f"🏷️ 【曾用名】\n{', '.join(names)}\n"
-    if profile := um.get('profile'):
-        um_text += f"👤 【用户画像】\n{profile}\n"
-    if recent_events := um.get('recent_events'):
-        um_text += f"📅 【近期事件】\n"
-        for time, event in recent_events:
-            formated_time = datetime.fromtimestamp(time).strftime("%m-%d %H:%M")
-            um_text += f"[{formated_time}] {event}\n"
-
-    return await ctx.asend_fold_msg_adaptive(um_text.strip())
-
+    return await handle_memory_command(ctx)
