@@ -3,6 +3,11 @@ chat_model_switch_interval: 1            # 默认的模型失败切换间隔 (s)
 chat_timeout: 180                        # 默认聊天超时时间 (s)
 
 text_embedding_models:                    # 可用文本嵌入模型列表
+  - name: "na-qwen3-embedding-0.6b"
+    provider: "na"                        
+    id: "qwen3-embedding-0.6b"
+    embedding_dimension: 1024
+    query_instruction: "Given a group-chat question, retrieve relevant factual memories about the specified people and events."
   - name: "sf-bge-m3"
     provider: "sf"
     id: "BAAI/bge-m3"

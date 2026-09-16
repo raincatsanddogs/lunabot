@@ -1,5 +1,8 @@
 from ..utils import *
 from openai import AsyncOpenAI
+from src.llm_core import openai_messages
+import os
+import re
 
 
 logger = get_logger("Llm")
@@ -16,6 +19,8 @@ class LlmModel:
     output_pricing: float = 0.
     max_token: int = 128000
     is_multimodal: bool = False
+    supports_tools: bool = False
+    supports_parallel_tools: bool = False
     model_id: Optional[str] = None
     image_response: bool = False
     allow_online: bool = False
@@ -36,7 +41,6 @@ class LlmModel:
     
     def get_full_name(self) -> str:
         return f"{self.provider.name}:{self.name}"
-
 
 
 @dataclass
@@ -67,22 +71,42 @@ class ApiProvider:
         self.local_quota_key = f"api_provider_{name}_local_quota"
         self.last_quota_sync_time = datetime.now()
 
-
     def get_qps_limit(self) -> int:
         return self.config.get('qps_limit')
-    
+
     def get_quota_sync_interval_sec(self) -> int:
         return parse_cfg_num(self.config.get('quota_sync_interval_sec'))
-    
+
     def get_price_unit(self) -> str:
         return self.config.get('price_unit')
 
     def get_api_key(self) -> str:
+        variable = self.config.get('api_key_env', '')
+        if variable:
+            if not isinstance(variable, str) or not re.fullmatch(
+                r'[A-Za-z_][A-Za-z0-9_]*', variable
+            ):
+                raise ValueError('api_key_env 必须填写环境变量名，不能填写密钥')
+            key = os.environ.get(variable)
+            if not key:
+                raise ValueError(f'模型供应商环境变量 {variable} 未配置')
+            return key
         return self.config.get('api_key')
-    
+
     def get_base_url(self) -> str:
         return self.config.get('base_url')
 
+    def describe_model(self, model_id: str) -> dict:
+        """返回不含凭据的接口描述，供调用方声明能力和构建缓存指纹。"""
+        return {
+            'name': model_id,
+            'protocol': 'openai',
+            'base_url': self.get_base_url(),
+        }
+
+    def prepare_messages(self, messages: list[dict]) -> list[dict]:
+        """OpenAI 接口不接收其他供应商保留的原生响应块。"""
+        return openai_messages(messages)
 
     def update_models(self):
         mtime = self.config.mtime()
@@ -105,7 +129,7 @@ class ApiProvider:
                 model.provider = self
             self.models_mtime = mtime
             logger.info(f"API供应方 {self.name} 模型列表更新成功 (共 {len(self.models)} 个模型)")
-        
+
     def check_qps_limit(self):
         """
         检查QPS限制，超出限制则抛出异常
@@ -150,7 +174,6 @@ class ApiProvider:
             self.last_quota_sync_time = datetime.now()
         return file_db.get(self.local_quota_key, 0.0)
 
-
     def get_client(self) -> AsyncOpenAI:
         """
         获取API客户端，返回OpenAPI异步客户端，由子类实现
@@ -163,8 +186,3 @@ class ApiProvider:
         返回None表示不支持同步额度
         """
         raise NotImplementedError()
-
-
-    
-
-    

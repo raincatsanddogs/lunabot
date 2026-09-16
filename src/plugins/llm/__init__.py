@@ -2,6 +2,7 @@ from ..utils import *
 import numpy as np
 from .api_provider import ApiProvider, LlmModel
 from .api_provider_manager import api_provider_mgr
+from src.llm_core import ModelTurn, normalize_openai, normalize_openai_embeddings
 
 config = Config('llm.llm')
 logger = get_logger("Llm")
@@ -42,7 +43,12 @@ class ChatSessionResponse:
     reasoning: Optional[str] = None
     images: List[Image.Image] = field(default_factory=list)
     result_list: List[Union[str, Image.Image]] = field(default_factory=list)
-        
+    assistant_message: dict = field(default_factory=dict)
+    tool_calls: list = field(default_factory=list)
+    provider_state: dict = field(default_factory=dict)
+    usage: dict = field(default_factory=dict)
+    finish_reason: Optional[str] = None
+
 
 # 会话类型
 class ChatSession:
@@ -83,7 +89,7 @@ class ChatSession:
         for i in range(len(imgs)):
             if isinstance(imgs[i], Image.Image):
                 imgs[i] = get_image_b64(imgs[i])
-        
+
         if len(imgs) > 0:
             content = [{"type": "text", "text": text}]
             for img in imgs:
@@ -114,7 +120,7 @@ class ChatSession:
     # 添加用户消息
     def append_user_content(self, text, imgs=None, verbose=True):
         self.append_content("user", text, imgs, verbose=verbose)
-    
+
     # 添加assistant消息
     def append_bot_content(self, text, imgs=None, verbose=True):
         self.append_content("assistant", text, imgs, verbose=verbose)
@@ -153,13 +159,14 @@ class ChatSession:
 
     # 获取回复 并且自动添加回复到消息列表
     async def get_response(
-        self, 
+        self,
         model_name: Union[str, List[str]],
         process_func=None,
         image_response=False,
-        timeout: Union[int, ConfigItem]=CHAT_TIMEOUT_CFG,
-        model_switch_interval: Union[int, ConfigItem]=CHAT_MODEL_SWITCH_INTERVAL_CFG,
-        max_tokens: Union[int, ConfigItem]=CHAT_MAX_TOKENS_CFG,
+        timeout: Union[int, ConfigItem] = CHAT_TIMEOUT_CFG,
+        model_switch_interval: Union[int, ConfigItem] = CHAT_MODEL_SWITCH_INTERVAL_CFG,
+        max_tokens: Union[int, ConfigItem] = CHAT_MAX_TOKENS_CFG,
+        tools=None,
     ):
         if isinstance(model_name, str):
             model_name = [model_name]
@@ -171,7 +178,7 @@ class ChatSession:
                 provider = model.provider
                 if not model.is_multimodal and self.has_image:
                     raise Exception(f"模型 {name} 不支持多模态输入")
-                
+
                 logger.info(f"会话{self.id}请求回复, 模型名: {name} ({idx+1}/{len(model_name)})")
 
                 provider.check_qps_limit()
@@ -182,36 +189,48 @@ class ChatSession:
                     extra_body["image_response"] = image_response
                     extra_body["modalities"] = ["image", "text"]
 
+                if tools and not model.supports_tools:
+                    raise ValueError(f'模型 {name} 未声明 supports_tools')
+
                 client = provider.get_client()
+                request_options = dict(model.client_kwargs)
+                if tools:
+                    request_options['tools'] = tools
+                    request_options['parallel_tool_calls'] = model.supports_parallel_tools
 
                 # 请求回复
                 try:
                     response = await asyncio.wait_for(
                         client.chat.completions.create(
                             model=model.get_model_id(),
-                            messages=self.content,
+                            messages=provider.prepare_messages(self.content),
                             extra_body=extra_body,
                             max_tokens=get_cfg_or_value(max_tokens),
-                            **model.client_kwargs,
-                        ), 
+                            **request_options,
+                        ),
                         timeout=get_cfg_or_value(timeout),
                     )
                 except TimeoutError:
                     raise Exception(f"等待回复超时")
 
-                if not isinstance(response, dict):
-                    response = response.model_dump()
-
-                if response.get('error'):
-                    raise Exception(response['error'])
+                # 原生供应商适配器可以直接返回 ModelTurn；兼容 OpenAI 的客户端
+                # 返回 SDK 对象或字典。会话层只处理统一结果，不判断供应商名称。
+                if isinstance(response, ModelTurn):
+                    turn = response
+                else:
+                    if not isinstance(response, dict):
+                        response = response.model_dump()
+                    if response.get('error'):
+                        raise Exception(response['error'])
+                    turn = normalize_openai(response)
 
                 # 解析回复
-                message             = response['choices'][0]['message']
-                prompt_tokens       = response['usage']['prompt_tokens']
-                completion_tokens   = response['usage']['completion_tokens']
+                message = turn.assistant_message
+                prompt_tokens = turn.usage.get('input_tokens') or 0
+                completion_tokens = turn.usage.get('output_tokens') or 0
 
                 # 回复内容
-                resp_content = message['content']
+                resp_content = message.get('content') or ''
                 result: str = ""
                 images: List[Image.Image] = []
                 if isinstance(resp_content, str):
@@ -225,7 +244,11 @@ class ChatSession:
                             result += part
                         elif isinstance(part, Image.Image):
                             images.append(part)
-                    result_list = resp_content
+                        elif isinstance(part, dict) and part.get('type') == 'text':
+                            result += part.get('text', '')
+                        elif isinstance(part, dict) and part.get('type') == 'image_url':
+                            images.append(b64_to_image(part['image_url']['url']))
+                    result_list = [result, *images]
                 # 额外的图像内容
                 for item in message.get('images', []):
                     img = b64_to_image(item['image_url']['url'])
@@ -240,13 +263,18 @@ class ChatSession:
                     reasoning = message['reasoning']
 
                 log_text = f"会话{self.id}获取回复，使用token: {prompt_tokens}+{completion_tokens}，内容:\n"
-                if reasoning: log_text += f"【思考】" + truncate(reasoning.replace('\n', '\\n'), 128) + "\n"
+                if reasoning:
+                    log_text += f"【思考】" + truncate(reasoning.replace('\n', '\\n'), 128) + "\n"
                 for part in result_list:
-                    log_text += truncate(part.replace('\n', '\\n'), 128) if isinstance(part, str) else "[图片]"
+                    log_text += (
+                        truncate(part.replace('\n', '\\n'), 128)
+                        if isinstance(part, str)
+                        else "[图片]"
+                    )
                 logger.info(log_text)
 
                 # 添加到对话记录
-                self.append_bot_content(result, imgs=[get_image_b64(img) for img in images], verbose=False)
+                self.content.append(deepcopy(message))
 
                 # 计算并更新额度
                 cost = model.calc_price(prompt_tokens, completion_tokens)
@@ -265,6 +293,11 @@ class ChatSession:
                     reasoning=reasoning,
                     images=images,
                     result_list=result_list,
+                    assistant_message=message,
+                    tool_calls=turn.tool_calls,
+                    provider_state=turn.provider_state,
+                    usage=turn.usage,
+                    finish_reason=turn.finish_reason,
                 )
 
                 if process_func:
@@ -273,7 +306,7 @@ class ChatSession:
                     else:
                         ret = process_func(ret)
                 return ret
-            
+
             except Exception as e:
                 logger.print_exc(f"会话{self.id}获取回复失败, 使用模型 {name}: {get_exc_desc(e)}")
                 errs.append((name, get_exc_desc(e)))
@@ -290,26 +323,46 @@ class ChatSession:
 
 # -------------------------------- TextEmbedding相关 -------------------------------- #
 
-# 获取文本嵌入
-async def get_text_embedding(texts: List[str], model_name: str = 'sf-bge-m3') -> List[List[float]]:
-    logger.info(f"获取文本嵌入: {texts}")
 
+def describe_embedding_model(model_name):
     models = config.get('text_embedding_models')
     model = find_by(models, 'name', model_name)
-    assert model is not None, f"文本嵌入模型 {model_name} 不存在"
-
+    if model is None:
+        return None
     provider = api_provider_mgr.get_provider(model['provider'])
+    return {
+        **provider.describe_model(model['id']),
+        'embedding_dimension': model.get('embedding_dimension', model.get('embed_dim')),
+        'query_instruction': model.get('query_instruction', ''),
+    }
+
+
+# 获取文本嵌入
+async def get_text_embedding(
+    texts: List[str], model_name: str = 'sf-bge-m3', with_usage=False
+) -> List[List[float]]:
+    descriptor = describe_embedding_model(model_name)
+    assert descriptor is not None, f"文本嵌入模型 {model_name} 不存在"
+    model = find_by(config.get('text_embedding_models'), 'name', model_name)
+    provider = api_provider_mgr.get_provider(model['provider'])
+    inputs = [texts] if isinstance(texts, str) else texts
     response = await provider.get_client().embeddings.create(
-        input=texts, 
+        input=inputs,
         model=model['id'],
         encoding_format='float',
     )
-    embeddings = [d.embedding for d in response.data]
-    tokens = response.usage.prompt_tokens
-    cost = model['input_pricing'] * tokens
+    if not isinstance(response, dict):
+        response = response.model_dump()
+    embeddings, usage = normalize_openai_embeddings(
+        response, len(inputs), descriptor.get('embedding_dimension')
+    )
+    tokens = usage.get('prompt_tokens')
+    if tokens is not None:
+        await provider.aupdate_quota(-model.get('input_pricing', 0) * tokens)
+    else:
+        logger.info('Embedding usage 未返回；不估算为零消耗')
+    return (embeddings, usage) if with_usage else embeddings
 
-    await provider.aupdate_quota(-cost)
-    return embeddings
 
 # 文本检索工具
 class TextRetriever:
@@ -476,8 +529,8 @@ def get_text_retriever(name) -> TextRetriever:
     if name not in text_retrievers:
         text_retrievers[name] = TextRetriever(name)
     return text_retrievers[name]
-        
-        
+
+
 # -------------------------------- TTS相关 -------------------------------- #
 
 # TTS
@@ -500,7 +553,7 @@ async def tts(text, save_path: str):
     # TODO: 更新本地额度
     return save_path
 
-    
+
 # -------------------------------- 文本翻译相关 -------------------------------- #
 
 async def translate_text(text, additional_info=None, dst_lang="中文", timeout=20, default=None, model=None, cache=True):
@@ -529,4 +582,3 @@ async def translate_text(text, additional_info=None, dst_lang="中文", timeout=
     if cache:
         text_translation_db.set("translations", translations)
     return translations[key]
-    
