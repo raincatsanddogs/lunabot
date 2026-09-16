@@ -1648,7 +1648,7 @@ class GroupBlackList:
             return int(group_id), group_desc
 
         # 关闭命令
-        switch_off = CmdHandler([f'/{name} off'], utils_logger, help_command='/{服务名} off')
+        switch_off = CmdHandler([f'/{name} off', SegCmd(f'/{name} off')], utils_logger, help_command='/{服务名} off', use_seg_cmd=False)
         switch_off.check_superuser(superuser)
         @switch_off.handle()
         async def _(ctx: HandlerContext):
@@ -1663,7 +1663,7 @@ class GroupBlackList:
             return await ctx.asend_reply_msg(f'{group_desc}的{name}已关闭')
         
         # 开启命令
-        switch_on = CmdHandler([f'/{name} on'], utils_logger, help_command='/{服务名} on')
+        switch_on = CmdHandler([f'/{name} on', SegCmd(f'/{name} on')], utils_logger, help_command='/{服务名} on', use_seg_cmd=False)
         switch_on.check_superuser(superuser)
         @switch_on.handle()
         async def _(ctx: HandlerContext):
@@ -1678,7 +1678,7 @@ class GroupBlackList:
             return await ctx.asend_reply_msg(f'{group_desc}的{name}已开启')
             
         # 查询命令
-        switch_query = CmdHandler([f'/{name} status'], utils_logger, help_command='/{服务名} status')
+        switch_query = CmdHandler([f'/{name} status', SegCmd(f'/{name} status')], utils_logger, help_command='/{服务名} status', use_seg_cmd=False)
         @switch_query.handle()
         async def _(ctx: HandlerContext):
             group_id, group_desc = await get_group_id_desc(ctx)
