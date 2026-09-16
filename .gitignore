@@ -144,7 +144,5 @@ data/
 logs/
 sandbox/
 config/
-tests/
 
 src/private/
-AGENTS.md

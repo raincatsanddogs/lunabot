@@ -3,8 +3,6 @@ nonebot-adapter-onebot
 nonebot_plugin_htmlrender==0.6.0
 nonebot_plugin_picstatus==2.1.3.post1
 nonebot_plugin_apscheduler
-nonebot-plugin-mcqq>=2.9.1
-nonebot-adapter-minecraft>=1.8.0
 tenacity
 matplotlib
 jieba
@@ -16,6 +14,7 @@ aiohttp
 wordcloud
 aiosmtplib
 mail
+mcrcon
 ascii_magic
 PicImageSearch
 aiorpcx
