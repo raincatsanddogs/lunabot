@@ -35,6 +35,11 @@ chat:
     max_read_calls: 4
   max_messages: 2
   reply_max_length: 512
+  stickers:
+    annotation_model: '' # 默认视觉主模型，否则使用 vision_model
+    prefetch: 2 # 0 关闭预取；仍可按需 search_stickers
+    max_per_turn: 2
+    cooldown_seconds: 60
   context:
     input_tokens: 24000
     image_token_reserve: 4096

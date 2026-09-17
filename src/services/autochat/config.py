@@ -25,6 +25,10 @@ FIELDS = {
     'chat.budget.max_read_calls': 'max_read_calls',
     'chat.reply_max_length': 'reply_max_length',
     'chat.max_messages': 'max_messages',
+    'chat.stickers.annotation_model': 'sticker_annotation_model',
+    'chat.stickers.prefetch': 'sticker_prefetch',
+    'chat.stickers.max_per_turn': 'max_stickers',
+    'chat.stickers.cooldown_seconds': 'sticker_cooldown',
     'chat.context.input_tokens': 'input_tokens',
     'chat.context.image_token_reserve': 'image_token_reserve',
     'chat.llm.max_tokens': 'output_tokens',
@@ -115,7 +119,7 @@ def parse_config(raw):
         value, default = values[key], defaults[field]
         if isinstance(default, str):
             valid = isinstance(value, str)
-        elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout'):
+        elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout', 'sticker_cooldown'):
             valid = (
                 isinstance(value, (int, float))
                 and not isinstance(value, bool)

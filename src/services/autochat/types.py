@@ -95,6 +95,10 @@ class Settings:
     max_rounds: int = 3
     max_read_calls: int = 4
     max_messages: int = 2
+    sticker_annotation_model: str = ''
+    sticker_prefetch: int = 2
+    max_stickers: int = 2
+    sticker_cooldown: float = 60
     reply_max_length: int = 512
     input_tokens: int = 24000
     output_tokens: int = 2048
@@ -138,6 +142,7 @@ class Settings:
             'media_bytes',
             'media_file_bytes',
             'image_token_reserve',
+            'max_stickers',
         ):
             if not isinstance(getattr(self, name), int) or getattr(self, name) <= 0:
                 raise ValueError(f'Invalid {name}')
@@ -148,6 +153,11 @@ class Settings:
             or self.max_batch_wait < self.debounce
         ):
             raise ValueError('Invalid scheduler/context limits')
+        value = self.sticker_cooldown
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError('Invalid sticker_cooldown')
+        if type(self.sticker_prefetch) is not int or not 0 <= self.sticker_prefetch <= 4:
+            raise ValueError('Invalid sticker_prefetch')
 
 
 class Clock:

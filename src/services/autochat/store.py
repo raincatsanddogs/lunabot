@@ -141,6 +141,12 @@ class Store:
             CREATE TABLE IF NOT EXISTS assets (
                 id TEXT PRIMARY KEY, mime TEXT NOT NULL, size INTEGER NOT NULL,
                 created REAL NOT NULL, last_used REAL NOT NULL, available INTEGER NOT NULL DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS stickers (
+                id TEXT PRIMARY KEY, scope TEXT NOT NULL, asset_id TEXT NOT NULL,
+                status TEXT NOT NULL, metadata TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+                last_sent REAL, UNIQUE(scope,asset_id));
+            CREATE TABLE IF NOT EXISTS sticker_operations (
+                id TEXT PRIMARY KEY, scope TEXT NOT NULL, request TEXT NOT NULL, result TEXT NOT NULL);
         """
         )
         self.db.commit()

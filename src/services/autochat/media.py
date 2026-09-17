@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
@@ -8,6 +9,39 @@ from pathlib import Path
 from collections import Counter
 
 from .store import dump
+
+
+def image_preview(data):
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as picture:
+        picture.verify()
+    with Image.open(io.BytesIO(data)) as picture:
+        mime = Image.MIME.get(picture.format, "image/png")
+        thumb = io.BytesIO()
+        # A static contact sheet represents motion; originals remain untouched.
+        frames = getattr(picture, 'n_frames', 1)
+        if frames > 1000:
+            raise ValueError('Image has too many animation frames')
+        durations = []
+        for index in range(frames):
+            picture.seek(index)
+            durations.append(max(1, picture.info.get('duration', 100)))
+        targets = [sum(durations) * ratio for ratio in (0, .5, .999)] if frames > 1 else [0]
+        selected, elapsed = [], 0
+        for index, duration in enumerate(durations):
+            if any(elapsed <= target < elapsed + duration for target in targets):
+                selected.append(index)
+            elapsed += duration
+        sheet = Image.new('RGB', (480 * len(selected), 480), 'white')
+        for position, index in enumerate(selected):
+            picture.seek(index)
+            frame = picture.convert('RGBA')
+            frame.thumbnail((480, 480))
+            sheet.paste(frame, (position * 480, 0), frame)
+        sheet.save(thumb, format="WEBP", quality=65)
+        preview = thumb.getvalue()
+    return mime, preview
 
 
 class MediaStore:
@@ -32,6 +66,12 @@ class MediaStore:
 
     def pinned(self):
         pins = set(self.inflight)
+        pins.update(row[0] for row in self.store.db.execute(
+            "SELECT asset_id FROM stickers WHERE status != 'deleted'"
+        ))
+        for row in self.store.db.execute("SELECT value FROM kv WHERE key LIKE 'turn:%'"):
+            active = json.loads(row[0]).get('active', {})
+            pins.update(p['asset_id'] for p in active.get('attachments', []) if p.get('type') == 'image_ref')
         for row in self.store.db.execute("SELECT value FROM kv WHERE key LIKE 'state:%'"):
             state = json.loads(row[0])
             for message in state.get("context", []):
@@ -78,9 +118,10 @@ class MediaStore:
 
     async def ingest(self, source):
         import aiohttp
-        from PIL import Image
 
-        if source.startswith("data:"):
+        if isinstance(source, bytes):
+            data = source
+        elif source.startswith("data:"):
             encoded = source.split(",", 1)[1]
             if len(encoded) > self.settings.media_file_bytes * 4 / 3 + 4:
                 raise ValueError("Image too large")
@@ -101,19 +142,12 @@ class MediaStore:
             raise ValueError("Only platform HTTP URLs or inline images are accepted")
         if len(data) > self.settings.media_file_bytes:
             raise ValueError("Image too large")
-        with Image.open(io.BytesIO(data)) as picture:
-            picture.verify()
-        with Image.open(io.BytesIO(data)) as picture:
-            mime = Image.MIME.get(picture.format, "image/png")
-            picture.thumbnail((480, 480))
-            thumb = io.BytesIO()
-            picture.convert("RGB").save(thumb, format="WEBP", quality=65)
-            preview = thumb.getvalue()
+        mime, preview = await asyncio.to_thread(image_preview, data)
         asset_id = hashlib.sha256(data).hexdigest()
         path = self.path(asset_id)
         now = self.clock.now()
-        if not path.exists():
-            required = len(data) + (
+        if not path.exists() or not path.with_suffix('.preview.webp').exists():
+            required = (0 if path.exists() else len(data)) + (
                 0 if path.with_suffix('.preview.webp').exists() else len(preview)
             )
             if not self.clean(required):
@@ -147,6 +181,10 @@ class MediaStore:
                     "SELECT mime FROM assets WHERE id=?", (asset_id,)
                 ).fetchone()
                 path = self.path(asset_id)
+                mime = row['mime'] if row else 'image/webp'
+                if part.get('preview'):
+                    path = path.with_suffix('.preview.webp')
+                    mime = 'image/webp'
                 if not row or not path.exists():
                     content.append(
                         {"type": "text", "text": f"[附件 {asset_id} 已不可用；未查看原图]"}
@@ -156,7 +194,7 @@ class MediaStore:
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:{row['mime']};base64,"
+                                "url": f"data:{mime};base64,"
                                 + base64.b64encode(path.read_bytes()).decode()
                             },
                         }
