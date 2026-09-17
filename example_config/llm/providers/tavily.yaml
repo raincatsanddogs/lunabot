@@ -1,0 +1,9 @@
+# 搜索 provider，与模型 provider 放在同一目录，但不加入聊天模型列表。
+api_key: ""
+api_key_env: "" # 可选，例如 TAVILY_API_KEY；填写后优先使用且缺失时报错
+base_url: "https://api.tavily.com"
+auth_header: "Authorization"
+auth_scheme: "Bearer"
+qps_limit: 5 # 所有群的 Search 和 Extract 共用
+timeout: 20
+proxy: ""
