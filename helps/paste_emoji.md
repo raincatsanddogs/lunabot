@@ -77,7 +77,7 @@ emoji按首个Unicode码点转换：肤色、家庭、旗帜等组合表情可�
 - `/paste_emoji off` 关闭当前群的服务。
 - `/paste_emoji on` 开启当前群的服务。
 - `/paste_emoji status` 查看当前群状态。
-- `/help paste_emoji` 查看完整帮助。
+- `/help paste_emoji` 查看指令索引；`/help paste_emoji 服务管理` 查看本节。
 
 ---
 

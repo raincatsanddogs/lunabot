@@ -2176,7 +2176,7 @@ class CmdHandler:
                         ret.append(HelpDocCmdPart(
                             cmds=None,
                             doc_name=doc_name, 
-                            content="### " + p + f"\n\n>发送`/help {doc_name}`查看完整帮助",
+                            content="### " + p + f"\n\n>发送`/help {doc_name}`返回指令索引",
                         ))
             for part in ret:
                 lines = part.content.splitlines()

@@ -1,6 +1,14 @@
 template: |
   【LunaBot (XXX Deployed) 使用帮助】
-  发送 /help 英文服务名 查看各服务的详细帮助
-  例如发送 /help sekai 查看世界计划服务的帮助
+  发送 /help 英文服务名 查看各服务的指令索引
+  例如 /help sekai 查看首页，/help sekai 2 查看第2页
+  发送 /help sekai 查卡 或 /查卡 help 查看指令详情
   可查询的服务列表:
   {service_list}
+
+# 旧配置未填写时使用以下默认值。
+index:
+  page_size: 12       # 每页最多条目数（1-50）；超高时提前换页
+  width: 800         # 图片宽度（400-1600 px）
+  font_size: 20      # 正文字号（14-40 px）
+  max_height: 2000   # 图片高度上限（600-4000 px）

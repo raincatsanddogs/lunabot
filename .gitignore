@@ -146,3 +146,6 @@ sandbox/
 config/
 
 src/private/
+
+test/
+tests/

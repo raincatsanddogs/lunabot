@@ -99,7 +99,7 @@
 
 会话服务离线时不会提交操作。超时表示结果待确认，应使用返回的操作ID查询，避免重新发送新增指令。管理指令及其回复不会触发自动聊天或被提取为用户自述。
 
-发送 `/um help`、`/autochat um help` 查看本节，或 `/help chat` 查看完整帮助。
+发送 `/um help`、`/autochat um help` 或 `/help chat um` 查看本节，发送 `/help chat` 查看指令索引。
 
 ### 自动聊天表情包
 🔧 `/autochat sticker`
