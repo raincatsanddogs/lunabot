@@ -7,7 +7,7 @@ from .types import PROTOCOL_VERSION
 
 
 class RpcPlatform:
-    """双向认证连接：向 Luna 拉取事件，同时接收 Luna 的记忆管理请求。"""
+    """双向认证连接：向 Luna 拉取事件，接收记忆和素材管理请求。"""
 
     def __init__(self, url, token, consumer_id):
         self.url, self.token, self.consumer_id = url, token, consumer_id
@@ -15,6 +15,7 @@ class RpcPlatform:
         self.session = None
         self.connect_lock = asyncio.Lock()
         self.management_handler = None
+        self.sticker_handler = None
 
     async def connect(self):
         import aiorpcx
@@ -25,16 +26,17 @@ class RpcPlatform:
 
                 async def handle_reverse_request(request):
                     if (
-                        request.method != 'manage_memory'
+                        request.method not in ('manage_memory', 'manage_stickers')
                         or len(request.args) != 3
                         or request.args[0] != platform.token
                         or request.args[1] != PROTOCOL_VERSION
                     ):
-                        raise aiorpcx.RPCError(-32000, 'Unauthorized memory request')
-                    if platform.management_handler is None:
+                        raise aiorpcx.RPCError(-32000, 'Unauthorized management request')
+                    handler = platform.management_handler if request.method == 'manage_memory' else platform.sticker_handler
+                    if handler is None:
                         raise aiorpcx.RPCError(-32001, 'Engine is not ready')
                     try:
-                        return await platform.management_handler(request.args[2])
+                        return await handler(request.args[2])
                     except (ValueError, PermissionError, KeyError) as exc:
                         raise aiorpcx.RPCError(-32602, str(exc)) from exc
 
@@ -84,6 +86,12 @@ class RpcPlatform:
             action_id,
             segments,
         )
+
+    async def describe_search(self, provider):
+        return await self.call('describe_search', PROTOCOL_VERSION, provider)
+
+    async def search(self, provider, method, arguments):
+        return await self.call('web_tool', PROTOCOL_VERSION, provider, method, arguments)
 
 
 class RpcGateway:

@@ -14,6 +14,7 @@
 - [文本转语音](#文本转语音)
 - [翻译文本或图片](#翻译文本或图片)
 - [自动聊天记忆管理](#自动聊天记忆管理)
+- 🔧 [自动聊天表情包](#自动聊天表情包)
 - 🛠️ [开启或关闭at触发聊天](#开启或关闭at触发聊天)
 - 🛠️ [查询或修改聊天模型](#查询或修改聊天模型)
 - 🛠️ [重置聊天模型](#重置聊天模型)
@@ -100,6 +101,37 @@
 
 发送 `/um help`、`/autochat um help` 查看本节，或 `/help chat` 查看完整帮助。
 
+### 自动聊天表情包
+🔧 `/autochat sticker`
+> 由本群群主、管理员或超级管理维护本群表情包库。以下查询和修改操作均需管理员权限，且 autochat 服务必须在线。
+
+先发送 `/autochat sticker add`，在**同一条消息中直接附带 1 至 4 张图片**（可含 GIF）；仅回复一张已有图片不会导入。Bot 返回操作 ID 后，发送 `/autochat sticker operation <操作ID>` 查询进度。导入期间显示 `pending`，完成后显示 `finished`，请继续查看各素材的结果：`active` 表示可用，`failed` 表示该图片导入或自动标注失败。失败或服务重启导致 `interrupted` 时，修复配置后重新发送 `add` 和图片即可。
+
+- `/autochat sticker list [关键词]`：列出本群素材 ID、状态和说明；关键词用于优先排列相关素材，最多显示 30 条。
+- `/autochat sticker show <素材ID>`：查看指定素材的状态和全部说明。
+- `/autochat sticker edit <素材ID> <字段> <内容>`：修订自动标注，字段见下表。
+- `/autochat sticker delete <素材ID>`：停用素材，不删除已经发出的历史消息。
+
+| 字段 | 含义 | 内容示例 |
+| --- | --- | --- |
+| `description` | 可见画面或动图动作 | 小猫举着写有“加油”的牌子 |
+| `text` | 图片中的文字 | 加油 |
+| `intents` | 适合表达的意图，逗号分隔 | 鼓励,支持 |
+| `tone` | 语气，逗号分隔 | 温和,轻松 |
+| `avoid_contexts` | 不适用的情境，逗号分隔 | 严肃求助,悲伤倾诉 |
+| `persona_tags` | 人设风格标签，逗号分隔 | 可爱,俏皮 |
+
+例如，先用 `/autochat sticker list 加油` 找到素材，再复制实际 ID 修订：
+
+- `/autochat sticker edit 0123456789abcdef01234567 description 小猫举牌鼓励对方`
+- `/autochat sticker edit 0123456789abcdef01234567 avoid_contexts 严肃求助,悲伤倾诉`
+
+素材仅在导入的群内使用。相同文件重复导入会复用已有素材；重新导入已删除的文件会重新标注并启用。请检查自动标注是否准确，尤其是安慰、调侃和嘲讽的区别。
+
+聊天时无需额外指令，模型会按语境选择纯文字、单独表情包或图文混合消息。默认每轮最多使用 2 个表情包，同一素材冷却 60 秒，不会每次强制配图。GIF 保留原文件用于发送，视觉模型查看抽取的代表帧；纯文本模型依据素材说明选择。
+
+部署时需配置可用的视觉模型用于自动标注：优先使用 `chat.stickers.annotation_model`，未指定时使用支持视觉的主模型，否则使用 `chat.llm.vision_model`。这些选项位于 `config/chat/autochat.yaml`。
+
 ### 开启或关闭at触发聊天
 🛠️ `/atchat on` `/atchat off`
 > 在当前群聊开启或关闭at触发聊天，关闭后只能通过指令触发    
@@ -129,6 +161,10 @@
 
 - `/autochat on` 开启当前群聊的自动聊天
 - `/autochat off` 关闭当前群聊的自动聊天
+
+自动聊天支持中途分段发送、按需联网后继续回答。默认整轮最多 10 条，消息间隔至少 1 秒，可在 `config/chat/autochat.yaml` 调整 `chat.max_messages` 和 `chat.send_interval_seconds`。文字、单独表情包和图文混合消息共用这一条数上限。
+
+启用联网需先复制 `example_config/llm/providers/tavily.yaml` 到 `config/llm/providers/tavily.yaml` 并填写凭据，再将 `config/chat/autochat.yaml` 中的 `chat.websearch.provider` 设为 `tavily`。未配置时不提供联网工具。
 
 ---
 

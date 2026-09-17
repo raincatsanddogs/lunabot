@@ -5,6 +5,9 @@ from ..llm import ChatSession, get_text_embedding, describe_embedding_model
 from ..llm.api_provider_manager import api_provider_mgr
 from src.services.autochat.store import Store
 from src.services.autochat.types import Event as AutochatEvent, Scope, PROTOCOL_VERSION
+from src.services.autochat.websearch import TavilyProvider
+from src.services.autochat.wire import outgoing_segments
+from src.services.autochat.stickers import parse_sticker_command, format_sticker_result
 from src.services.autochat.management import (
     parse_command,
     requires_admin,
@@ -24,6 +27,7 @@ _engine_id = None
 RPC_SERVICE = 'autochat'
 _rpc_token = config.get('rpc.token')
 _rpc_consumer_id = config.get('rpc.consumer_id', 'autochat')
+_search_provider = None
 
 
 def get_autochat_store():
@@ -40,7 +44,7 @@ async def record_new_message(bot: Bot, event: MessageEvent):
         return
     if not chat_gwl.check_id(event.group_id) or not autochat_gwl.check_id(event.group_id):
         return
-    if event.message.extract_plain_text().strip().startswith(('/um', '/autochat um')):
+    if event.message.extract_plain_text().strip().startswith(('/um', '/autochat um', '/autochat sticker')):
         return
     get_autochat_store().add_event(
         AutochatEvent(
@@ -81,7 +85,7 @@ start_rpc_service(
 
 def check_protocol(version):
     if version != PROTOCOL_VERSION:
-        raise ValueError('Unsupported autochat protocol; expected v3')
+        raise ValueError(f'Unsupported autochat protocol; expected v{PROTOCOL_VERSION}')
 
 
 @rpc_method(RPC_SERVICE, 'register_engine')
@@ -188,13 +192,10 @@ async def handle_send_action(cid, version, consumer_id, bot_id, group_id, action
     bot = await aget_group_bot(gid, raise_exc=True)
     if str(bot.self_id) != str(bot_id):
         return {'state': 'failed', 'reason': 'bot_scope_mismatch'}
-    if not isinstance(segments, list) or any(
-        s.get('type') not in ('text', 'at', 'reply') for s in segments
-    ):
-        raise ValueError('Unsupported message segments')
+    wire, compact = outgoing_segments(segments, config.get('chat.media.file_bytes', 20 * 1024 * 1024))
     scope, store = Scope(str(bot_id), str(group_id)), get_autochat_store()
     key = scope.key + ':' + str(consumer_id) + ':' + str(action_id)
-    action = store.start_action(key, scope, {'segments': segments})
+    action = store.start_action(key, scope, {'segments': compact})
     if action['state'] != 'pending':
         return {
             'state': action['state'] if action['state'] != 'sending' else 'unknown',
@@ -202,14 +203,70 @@ async def handle_send_action(cid, version, consumer_id, bot_id, group_id, action
         }
     store.finish_action(key, 'sending', {})
     try:
+        if action['payload']['segments'] != compact:
+            raise ValueError('Action payload changed')
         response = await bot.send_group_msg(
-            group_id=gid, message=Message(action['payload']['segments'])
+            group_id=gid, message=Message(wire)
         )
         store.finish_action(key, 'sent', response)
         return {'state': 'sent', **response}
     except Exception:
         store.finish_action(key, 'unknown', {})
         return {'state': 'unknown'}
+
+
+def get_search_provider(name):
+    global _search_provider
+    if name != 'tavily':
+        raise ValueError('Unknown search provider')
+    if _search_provider is None:
+        provider_config = Config('llm.providers.tavily')
+        _search_provider = TavilyProvider(provider_config.get_all)
+    return _search_provider
+
+
+@rpc_method(RPC_SERVICE, 'describe_search')
+async def handle_describe_search(cid, version, provider):
+    check_protocol(version)
+    try:
+        return get_search_provider(provider).describe()
+    except Exception:
+        return {'available': False, 'error': 'provider_not_configured'}
+
+
+@rpc_method(RPC_SERVICE, 'web_tool')
+async def handle_web_tool(cid, version, provider, method, arguments):
+    check_protocol(version)
+    try:
+        return await get_search_provider(provider).execute(method, arguments)
+    except Exception:
+        return {'error': 'search_provider_unavailable'}
+
+
+async def handle_sticker_command(ctx):
+    if not is_group_msg(ctx.event):
+        return await ctx.asend_reply_msg('请在需要管理表情包的群内使用此指令')
+    try:
+        if not await memory_permission(ctx):
+            raise PermissionError('此操作需要本群群主、管理员或超级管理权限')
+        command = parse_sticker_command(ctx.get_args().strip())
+        session = _sessions.get(_engine_id)
+        if session is None:
+            return await ctx.asend_reply_msg('autochat 会话服务离线，表情包操作未提交')
+        images = []
+        if command['op'] == 'add':
+            for segment in get_msg(ctx.event):
+                if segment['type'] == 'image' and segment['data'].get('url'):
+                    images.append(segment['data']['url'])
+        payload = {'bot_id': str(ctx.bot.self_id), 'group_id': str(ctx.group_id),
+                   'actor_id': str(ctx.user_id), 'message_id': str(ctx.message_id),
+                   'admin': True, 'command': command, 'images': images}
+        result = await asyncio.wait_for(session.send_request('manage_stickers', [_rpc_token, PROTOCOL_VERSION, payload]), 10)
+        return await ctx.asend_fold_msg_adaptive(format_sticker_result(result))
+    except (asyncio.TimeoutError, ConnectionError, OSError):
+        return await ctx.asend_reply_msg('表情包操作结果待确认，请重发同一请求或查询素材列表；不会重复保存同一图片')
+    except (ValueError, PermissionError, aiorpcx.RPCError) as exc:
+        return await ctx.asend_reply_msg(str(exc))
 
 
 async def memory_permission(ctx):

@@ -49,11 +49,13 @@ async def run(args):
                 settings.summary_model,
                 settings.embedding_model,
                 settings.vision_model,
+                settings.sticker_annotation_model,
                 *settings.fallback_models,
             ]
         )
     engine = Engine(store, gateway, platform, settings, clock)
     platform.management_handler = engine.manage_memory
+    platform.sticker_handler = engine.stickers.manage
     cursor = store.get("platform_cursor", 0)
 
     async def step(now=None):
@@ -71,6 +73,7 @@ async def run(args):
                             next_settings.summary_model,
                             next_settings.embedding_model,
                             next_settings.vision_model,
+                            next_settings.sticker_annotation_model,
                             *next_settings.fallback_models,
                         ]
                     )
@@ -80,6 +83,7 @@ async def run(args):
                         next_settings.summary_model,
                         next_settings.embedding_model,
                         next_settings.vision_model,
+                        next_settings.sticker_annotation_model,
                         *next_settings.fallback_models,
                     ):
                         if name and name not in gateway.models:

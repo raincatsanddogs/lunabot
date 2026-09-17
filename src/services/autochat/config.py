@@ -3,6 +3,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import math
+import hashlib
 
 import yaml
 
@@ -25,6 +26,12 @@ FIELDS = {
     'chat.budget.max_read_calls': 'max_read_calls',
     'chat.reply_max_length': 'reply_max_length',
     'chat.max_messages': 'max_messages',
+    'chat.send_interval_seconds': 'send_interval_seconds',
+    'chat.websearch.provider': 'search_provider',
+    'chat.websearch.max_search_calls': 'max_search_calls',
+    'chat.websearch.max_read_calls': 'max_web_read_calls',
+    'chat.websearch.max_results': 'search_max_results',
+    'chat.websearch.page_max_chars': 'page_max_chars',
     'chat.stickers.annotation_model': 'sticker_annotation_model',
     'chat.stickers.prefetch': 'sticker_prefetch',
     'chat.stickers.max_per_turn': 'max_stickers',
@@ -119,7 +126,7 @@ def parse_config(raw):
         value, default = values[key], defaults[field]
         if isinstance(default, str):
             valid = isinstance(value, str)
-        elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout', 'sticker_cooldown'):
+        elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout', 'send_interval_seconds', 'sticker_cooldown'):
             valid = (
                 isinstance(value, (int, float))
                 and not isinstance(value, bool)
@@ -142,7 +149,6 @@ def parse_config(raw):
                 next(path for path, field in FIELDS.items() if field == key) + ': must be positive'
             )
     for field, valid in (
-        ('max_messages', settings.get('max_messages', defaults['max_messages']) <= 2),
         ('input_tokens', settings.get('input_tokens', defaults['input_tokens']) >= 2048),
         ('debounce', settings.get('debounce', defaults['debounce']) >= 0),
         (
@@ -200,10 +206,11 @@ class ConfigFile:
         self.stamp = None
 
     def read(self):
-        # 无效文件也记录本次时间戳，避免每次轮询重复报错。调用方保留旧配置，
+        # 无效文件也记录内容指纹，避免每次轮询重复报错。调用方保留旧配置，
         # 用户再次保存文件后再尝试解析。
-        stamp = self.path.stat().st_mtime_ns
+        content = self.path.read_text(encoding='utf-8')
+        stamp = hashlib.sha256(content.encode('utf-8')).digest()
         if stamp == self.stamp:
             return None
         self.stamp = stamp
-        return parse_config(yaml.safe_load(self.path.read_text(encoding='utf-8')))
+        return parse_config(yaml.safe_load(content))

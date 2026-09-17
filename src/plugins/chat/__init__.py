@@ -735,3 +735,10 @@ autochat_usermemory.check_cdrate(chat_cd)
 @autochat_usermemory.handle()
 async def _(ctx: HandlerContext):
     return await handle_memory_command(ctx)
+
+
+autochat_stickers = CmdHandler(['/autochat sticker'], logger, use_seg_cmd=False)
+autochat_stickers.check_cdrate(chat_cd)
+@autochat_stickers.handle()
+async def _(ctx: HandlerContext):
+    return await handle_sticker_command(ctx)

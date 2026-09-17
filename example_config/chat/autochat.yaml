@@ -31,10 +31,17 @@ chat:
   budget:
     wakes_per_minute: 3
     calls_per_minute: 6
-    max_rounds: 3
+    max_rounds: 6
     max_read_calls: 4
-  max_messages: 2
+  max_messages: 10 # 整个唤醒轮次的累计发送尝试
+  send_interval_seconds: 1
   reply_max_length: 512
+  websearch:
+    provider: '' # 填 tavily 启用；凭据放在 config/llm/providers/tavily.yaml
+    max_search_calls: 2
+    max_read_calls: 2
+    max_results: 5
+    page_max_chars: 6000
   stickers:
     annotation_model: '' # 默认视觉主模型，否则使用 vision_model
     prefetch: 2 # 0 关闭预取；仍可按需 search_stickers

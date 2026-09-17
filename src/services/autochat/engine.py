@@ -26,9 +26,12 @@ from .store import dump
 from .tools import TOOLS, FINISH, POLICY, SYSTEM
 from .types import Event, Scope
 from .management import MemoryManagement, WRITES
+from .actions import SendActions
+from .stickers import StickerLibrary
+from .runner import run_turn
 
 
-class Engine:
+class Engine(SendActions):
     """按群协调触发、工具调用、发送和记忆写入。SQLite 保存可恢复状态。"""
 
     def __init__(self, store, gateway, platform, settings, clock):
@@ -41,6 +44,7 @@ class Engine:
         self.management_locks = {}
         self.index_tasks = set()
         self.media = MediaStore(store, settings, clock)
+        self.stickers = StickerLibrary(self)
         self.index = MemoryIndex(store, gateway, settings.embedding_model, clock)
         self.tasks = {}
         self.summary_tasks = {}
@@ -49,8 +53,14 @@ class Engine:
         self.last_media_cleanup = 0
         self.media.release_contexts = self.release_idle_contexts
         self.store.recover_actions()
+        pending_calls = set()
+        for row in store.db.execute("SELECT value FROM kv WHERE key LIKE 'turn:%'"):
+            journal = json.loads(row[0])
+            pending_calls.update(c['id'] for c in journal.get('active', {}).get('calls', []))
         for scope in store.scopes():
             self.invalidate_batches(scope)
+            for row in store.db.execute("SELECT id FROM actions WHERE scope=? AND state='sent'", (scope.key,)).fetchall():
+                self.note_sent(scope, row['id'])
             state = store.state(scope)
             calls = {}
             for message in state["context"]:
@@ -59,6 +69,8 @@ class Engine:
                 if message["role"] == "tool":
                     calls.pop(message['tool_call_id'], None)
             for call_id, call in calls.items():
+                if call_id in pending_calls:
+                    continue
                 state["context"].append(
                     {
                         "role": "tool",
@@ -126,8 +138,8 @@ class Engine:
                     )
             with self.store.db:
                 self.store.db.execute(
-                    'DELETE FROM kv WHERE key IN (?,?)',
-                    ('commit:' + batch_id, 'result:' + batch_id),
+                    'DELETE FROM kv WHERE key IN (?,?,?)',
+                    ('commit:' + batch_id, 'result:' + batch_id, 'turn:' + batch_id),
                 )
 
     async def manage_memory(self, request):
@@ -401,10 +413,11 @@ class Engine:
                 parts.append(
                     {
                         "type": "text",
-                        "text": f"[附件状态=已加载 图片来源={event.message_id} asset_id={data['asset_id']}]",
+                        "text": f"[附件状态=已加载 图片来源={event.message_id} asset_id={data['asset_id']}]"
+                        + (f"[bot表情包 {data['sticker_id']}: {data.get('description', '')} 图中文字={data.get('visible_text', '')}]" if data.get('sticker_id') else ''),
                     }
                 )
-                parts.append({"type": "image_ref", "asset_id": data["asset_id"]})
+                parts.append({"type": "image_ref", "asset_id": data["asset_id"], **({'preview': True, 'sticker_description': data.get('description', '')} if data.get('sticker_id') else {})})
             elif kind == "image":
                 parts.append(
                     {
@@ -665,6 +678,11 @@ class Engine:
                 for part in message['content']:
                     if part.get('type') != 'image_ref':
                         continue
+                    if 'sticker_description' in part:
+                        description = part['sticker_description']
+                        part.clear()
+                        part.update(type='text', text='[表情包已存描述；主模型未看原图] ' + description)
+                        continue
                     asset_id = part['asset_id']
                     key = 'vision:' + self.settings.vision_model + ':' + asset_id
                     description = self.store.get(key)
@@ -708,293 +726,7 @@ class Engine:
         return self.media.materialize(context)
 
     async def turn(self, scope, events, batch_id):
-        """执行一个已抽样批次；仅 finish_turn 可以提交对外发送。"""
-        self.task_settings.set(copy.deepcopy(self._settings))
-        self.task_revision.set(self.store.revision(scope))
-        started = time.monotonic()
-        consumed = list(events)
-        watermark = max(e.seq for e in events)
-        authors = {e.speaker_id for e in events}
-        rebased = False
-        interrupted = False
-        corrections = 0
-        completed = None
-        try:
-            await self.prepare_context(scope, required_ids=[e.message_id for e in consumed])
-            visible = set(self.store.state(scope)['visible_sources'])
-            committed = self.store.get('commit:' + batch_id)
-            if committed:
-                # Resume only the persisted intent. Stable action IDs suppress sent/unknown actions.
-                await self.finish(
-                    scope,
-                    batch_id,
-                    committed['args'],
-                    set(committed['visible']),
-                    watermark,
-                    authors,
-                )
-                self.store.batch_done(batch_id, 'finished')
-                return
-            for round_index in range(self.settings.max_rounds):
-                if not self.enabled.get(scope.key, True):
-                    break
-                if not self.budget(scope, "calls", self.settings.calls_per_minute, 60, True):
-                    self.trace(scope, "budget_exhausted", {"batch_id": batch_id})
-                    break
-                state = self.store.state(scope)
-                model, context = state['model'], state['context']
-                if estimate(context, self.settings.image_token_reserve) > self.input_budget(model):
-                    await self.prepare_context(
-                        scope, force=True, required_ids=[e.message_id for e in consumed]
-                    )
-                    context = self.store.state(scope)['context']
-                    visible = set(self.store.state(scope)['visible_sources'])
-                if estimate(context, self.settings.image_token_reserve) > self.input_budget(model):
-                    raise ValueError('Context exceeds configured input budget after compaction')
-                # A read tool may already have delivered the correction to the
-                # model. Only advance when every relevant update is visible;
-                # a newer unseen message must still invalidate the draft.
-                updates = self.relevant_updates(scope, watermark, authors)
-                if updates and all(e.message_id in visible for e in updates):
-                    known_consumed = {e.message_id for e in consumed}
-                    consumed.extend(e for e in updates if e.message_id not in known_consumed)
-                    observe(self, scope, updates)
-                    watermark = max(e.seq for e in updates)
-                    self.trace(
-                        scope,
-                        'updates_in_context',
-                        {'batch_id': batch_id, 'new_messages': [e.message_id for e in updates]},
-                    )
-                request = await self.model_messages(scope, model, context)
-                self.trace(
-                    scope,
-                    "model_request",
-                    {
-                        "batch_id": batch_id,
-                        "round": round_index,
-                        "model": model,
-                        "prefix_hash": hashlib.sha256(dump(context).encode()).hexdigest(),
-                        "input_estimate": estimate(context, self.settings.image_token_reserve),
-                    },
-                )
-                try:
-                    result = await self.gateway.query_llm(
-                        model,
-                        request,
-                        TOOLS,
-                        {
-                            "max_tokens": self.settings.output_tokens,
-                            "timeout": self.settings.timeout,
-                        },
-                    )
-                    self.assert_revision(scope)
-                except Exception as exc:
-                    self.trace(scope, 'model_error', {'model': model, 'type': type(exc).__name__})
-                    chain = [self.settings.model, *self.settings.fallback_models]
-                    index = chain.index(model) if model in chain else len(chain)
-                    if index + 1 >= len(chain):
-                        raise
-                    await self.prepare_context(
-                        scope,
-                        force=True,
-                        model=chain[index + 1],
-                        required_ids=[e.message_id for e in consumed],
-                    )
-                    visible = set(self.store.state(scope)['visible_sources'])
-                    continue
-                self.trace(
-                    scope,
-                    "model_usage",
-                    {"task": "chat", "usage": result.usage, "finish_reason": result.finish_reason},
-                )
-                # Audit survives later context rebuilding, including native Gemini
-                # signatures/call IDs. It is not fed back as an extra prompt copy.
-                self.trace(
-                    scope,
-                    'model_response',
-                    {
-                        'batch_id': batch_id,
-                        'round': round_index,
-                        'model': model,
-                        'assistant_message': result.assistant_message,
-                    },
-                )
-                self.append_context(scope, [result.assistant_message])
-                calls = result.tool_calls
-                if not calls:
-                    if corrections:
-                        break
-                    corrections += 1
-                    self.append_context(
-                        scope,
-                        [
-                            {
-                                "role": "user",
-                                "content": "请调用 finish_turn 提交或沉默，普通文字不会发送。",
-                            }
-                        ],
-                    )
-                    continue
-                reads = [c for c in calls if c["function"]["name"] != "finish_turn"]
-                finishes = [c for c in calls if c["function"]["name"] == "finish_turn"]
-                if reads:
-                    results = await asyncio.gather(
-                        *(
-                            self.read_tool(scope, call, visible)
-                            for call in reads[: self.settings.max_read_calls]
-                        )
-                    )
-                    by_id = {call["id"]: result for call, result in zip(reads, results)}
-                    attachments = []
-                    for call in calls:
-                        value = by_id.get(
-                            call["id"],
-                            {
-                                "error": "finish_turn must be separate from reads; or read limit exceeded"
-                            },
-                        )
-                        if isinstance(value, dict) and value.get("attachment"):
-                            attachments.append(value.pop("attachment"))
-                            if value.get('image'):
-                                attachments.append(value.pop('image'))
-                        self.tool_result(scope, call, value)
-                    if attachments:
-                        self.append_context(scope, [{"role": "user", "content": attachments}])
-                        self.media.unpin(
-                            p['asset_id'] for p in attachments if p.get('type') == 'image_ref'
-                        )
-                    st = self.store.state(scope)
-                    st['visible_sources'] = sorted(visible)
-                    self.store.save_state(scope, st)
-                    continue
-                newer = self.store.events(
-                    scope, after=watermark, now=self.clock.now(), pending=True, limit=100
-                )
-                focus = set(self.policy(self.store.state(scope))["focus_user_ids"])
-                relevant = self.relevant_updates(scope, watermark, authors | focus)
-                if relevant or not self.enabled.get(scope.key, True):
-                    for call in calls:
-                        self.tool_result(
-                            scope,
-                            call,
-                            {
-                                "error": "draft superseded by relevant new messages or group disabled; no actions executed"
-                            },
-                        )
-                    self.trace(
-                        scope,
-                        "draft_cancelled",
-                        {"batch_id": batch_id, "new_messages": [e.message_id for e in relevant]},
-                    )
-                    if rebased or not self.enabled.get(scope.key, True):
-                        break
-                    rebased = True
-                    consumed.extend(relevant)
-                    observe(self, scope, relevant)
-                    watermark = max(e.seq for e in newer)
-                    await self.prepare_context(scope, required_ids=[e.message_id for e in consumed])
-                    visible = set(self.store.state(scope)['visible_sources'])
-                    continue
-                if len(finishes) != 1:
-                    for call in finishes:
-                        self.tool_result(
-                            scope, call, {"error": "Exactly one finish_turn is allowed"}
-                        )
-                    continue
-                call = finishes[0]
-                try:
-                    args = json.loads(call["function"]["arguments"])
-                    validate(args, FINISH)
-                    if completed is not None:
-                        value = {
-                            'memories': await self.propose_memories(
-                                scope, args['memory_proposals'], visible
-                            ),
-                            'messages': [],
-                            'note': 'memory review only; original messages and policy already committed',
-                        }
-                    else:
-                        value = await self.finish(
-                            scope, batch_id, args, visible, watermark, authors
-                        )
-                except Exception as exc:
-                    self.tool_result(scope, call, {"error": str(exc)[:500]})
-                    if corrections:
-                        break
-                    corrections += 1
-                    continue
-                self.tool_result(scope, call, value)
-                if (
-                    completed is None
-                    and any(m.get('possible_duplicates') for m in value['memories'])
-                    and round_index + 1 < self.settings.max_rounds
-                ):
-                    completed = value
-                    self.append_context(
-                        scope,
-                        [
-                            {
-                                'role': 'user',
-                                'content': '本轮发送和策略已完成。只在剩余预算内澄清刚才的 possible_duplicates；读取必要来源后用 duplicate_of 或 distinct_from。finish_turn.messages 必须为空。证据不足可保留待审，不再发言。',
-                            }
-                        ],
-                    )
-                    continue
-                self.trace(
-                    scope,
-                    'turn_complete',
-                    {
-                        'batch_id': batch_id,
-                        'sent_count': sum(
-                            m['state'] == 'sent' for m in (completed or value)['messages']
-                        ),
-                        'latency_wall_seconds': time.monotonic() - started,
-                    },
-                )
-                self.store.batch_done(batch_id, "finished")
-                return
-            self.store.batch_done(batch_id, "finished" if completed else "stopped")
-            if completed:
-                self.trace(
-                    scope,
-                    'turn_complete',
-                    {
-                        'batch_id': batch_id,
-                        'sent_count': sum(m['state'] == 'sent' for m in completed['messages']),
-                        'memory_review_deferred': True,
-                    },
-                )
-        except asyncio.CancelledError:
-            interrupted = True
-            self.trace(scope, 'turn_interrupted', {'batch_id': batch_id})
-            raise
-        except Exception as exc:
-            if completed:
-                self.trace(
-                    scope,
-                    'memory_review_deferred',
-                    {'batch_id': batch_id, 'type': type(exc).__name__},
-                )
-                self.trace(
-                    scope,
-                    'turn_complete',
-                    {
-                        'batch_id': batch_id,
-                        'sent_count': sum(m['state'] == 'sent' for m in completed['messages']),
-                        'memory_review_deferred': True,
-                    },
-                )
-                self.store.batch_done(batch_id, 'finished')
-            else:
-                self.trace(
-                    scope,
-                    "turn_error",
-                    {"batch_id": batch_id, "type": type(exc).__name__, "error": str(exc)[:500]},
-                )
-                self.store.batch_done(batch_id, "failed")
-        finally:
-            if not interrupted:
-                self.store.mark_handled(consumed)
+        return await run_turn(self, scope, events, batch_id)
 
     def relevant_updates(self, scope, watermark, authors):
         focus = set(self.policy(self.store.state(scope))['focus_user_ids'])
@@ -1143,106 +875,22 @@ class Engine:
         known_users = {e.speaker_id for e in known_events}
         if not set(policy["focus_user_ids"]).issubset(known_users):
             raise ValueError("Focus user was not visible")
-        if len(args["messages"]) > self.settings.max_messages:
-            raise ValueError("Too many messages")
-        prepared = []
-        for message in args["messages"]:
-            if not message["text"].strip() or len(message["text"]) > self.settings.reply_max_length:
-                raise ValueError("Invalid reply length")
-            if not set(
-                message.get("at_user_ids", []) + message.get("awaiting_user_ids", [])
-            ).issubset(known_users):
-                raise ValueError("Unknown reply target")
-            if message.get("reply_to_message_id") and message["reply_to_message_id"] not in visible:
-                raise ValueError("Unknown quoted message")
-            segments = []
-            if message.get("reply_to_message_id"):
-                segments.append({"type": "reply", "data": {"id": message["reply_to_message_id"]}})
-            segments.extend(
-                {"type": "at", "data": {"qq": uid}} for uid in message.get("at_user_ids", [])
-            )
-            segments.append({"type": "text", "data": {"text": message["text"]}})
-            prepared.append((message, segments))
+        messages = args.get('messages', [])
+        if len(messages) > self.settings.max_messages:
+            raise ValueError('Too many messages')
+        # Validate the complete legacy envelope before its first outward effect.
+        for message in messages:
+            self.prepare_send(scope, message, visible)
         self.store.set('commit:' + batch_id, {'args': args, 'visible': sorted(visible)})
-        sent = []
-        for index, (message, segments) in enumerate(prepared):
-            batch_row = self.store.db.execute(
-                'SELECT value FROM batches WHERE id=?', (batch_id,)
-            ).fetchone()
-            decision = json.loads(batch_row[0]) if batch_row else {}
-            action_id = f"{batch_id}:{decision.get('generation', 0)}:{index}"
-            action = self.store.start_action(
-                action_id, scope, {"segments": segments, "message": message}
-            )
-            if action["state"] != "pending":
-                sent.append(
-                    {"action_id": action_id, "state": action["state"], "result": action["result"]}
-                )
-                continue
-            if not self.enabled.get(scope.key, True) or (
-                watermark and self.relevant_updates(scope, watermark, authors)
-            ):
-                result = {'reason': 'disabled_or_new_messages'}
-                self.store.finish_action(action_id, "cancelled", result)
-                sent.append({'action_id': action_id, 'state': 'cancelled', 'result': result})
-                self.trace(scope, 'send', sent[-1])
-                continue
-            self.store.finish_action(action_id, "sending", {})
-            try:
-                self.assert_revision(scope)
-                # Use the original persisted intent if a process restarted mid-turn.
-                response = await self.platform.send(scope, action["payload"]["segments"], action_id)
-                state = response.get("state", "sent" if response.get("message_id") else "unknown")
-            except asyncio.CancelledError:
-                self.store.finish_action(
-                    action_id, 'unknown', {'reason': 'interrupted_during_send'}
-                )
-                raise
-            except Exception as exc:
-                state, response = "unknown", {"error": type(exc).__name__}
-            if state not in ("sent", "failed", "unknown", "cancelled"):
-                state = "unknown"
-            self.store.finish_action(action_id, state, response)
-            sent.append({"action_id": action_id, "state": state, "result": response})
-            self.trace(scope, "send", sent[-1])
-            self.assert_revision(scope)
-            if state == "sent" and response.get("message_id"):
-                event = Event(
-                    scope.bot_id,
-                    scope.group_id,
-                    str(response["message_id"]),
-                    scope.bot_id,
-                    self.clock.now(),
-                    action["payload"]["segments"],
-                    "bot",
-                )
-                stored = self.store.add_event(event, self.clock.now())
-                if stored:
-                    self.store.mark_handled([stored])
-                waiting = action["payload"]["message"].get("awaiting_user_ids", [])
-                if waiting and any(mark in message['text'] for mark in ('?', '？', '吗', '呢')):
-                    st = self.store.state(scope)
-                    # An unanswered question cannot renew its own attention lease.
-                    if not st.get('awaiting') and st['unanswered'] == 0:
-                        st["awaiting"] = {
-                            "message_id": event.message_id,
-                            "user_ids": waiting,
-                            "expires_at": self.clock.now()
-                            + min(policy["ttl_seconds"], self.settings.attention_seconds),
-                        }
-                        self.store.save_state(scope, st)
+        batch = self.store.db.execute('SELECT value FROM batches WHERE id=?', (batch_id,)).fetchone()
+        generation = json.loads(batch[0]).get('generation', 0) if batch else 0
+        for index, message in enumerate(messages):
+            await self.send_message(scope, batch_id, f'{batch_id}:{generation}:{index}',
+                                    message, visible, watermark, authors, policy['ttl_seconds'])
+        sent = self.send_results(scope, batch_id)
         # Replies are delivered before optional vector deduplication/network work.
         memories = await self.propose_memories(scope, args['memory_proposals'], visible)
         st = self.store.state(scope)
-        batch = self.store.db.execute(
-            'SELECT value FROM batches WHERE id=?', (batch_id,)
-        ).fetchone()
-        if (
-            batch
-            and json.loads(batch['value']).get('reason') == 'ambient'
-            and any(m['state'] == 'sent' for m in sent)
-        ):
-            st['unanswered'] += 1
         requested_policy = dict(policy)
         policy, policy_reasons = apply_policy(self, st, policy)
         st["policy"] = policy
@@ -1330,7 +978,7 @@ class Engine:
             result = await self.gateway.query_llm(
                 self.settings.summary_model,
                 await self.model_messages(scope, self.settings.summary_model, messages),
-                [TOOLS[-1]],
+                [t for t in TOOLS if t['function']['name'] == 'finish_turn'],
                 {"max_tokens": self.settings.output_tokens, "timeout": self.settings.timeout},
             )
             self.assert_revision(scope)
@@ -1365,7 +1013,7 @@ class Engine:
             self.media.unpin(assets)
 
     async def close(self):
-        tasks = [*self.tasks.values(), *self.summary_tasks.values(), *self.index_tasks]
+        tasks = [*self.tasks.values(), *self.summary_tasks.values(), *self.index_tasks, *self.stickers.tasks]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

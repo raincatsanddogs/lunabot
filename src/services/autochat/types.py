@@ -6,7 +6,7 @@ import math
 import time
 from dataclasses import asdict, dataclass, field
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -92,9 +92,15 @@ class Settings:
     max_batch_wait: float = 5
     wakes_per_minute: int = 3
     calls_per_minute: int = 6
-    max_rounds: int = 3
+    max_rounds: int = 6
     max_read_calls: int = 4
-    max_messages: int = 2
+    max_messages: int = 10
+    send_interval_seconds: float = 1
+    search_provider: str = ''
+    max_search_calls: int = 2
+    max_web_read_calls: int = 2
+    search_max_results: int = 5
+    page_max_chars: int = 6000
     sticker_annotation_model: str = ''
     sticker_prefetch: int = 2
     max_stickers: int = 2
@@ -142,22 +148,28 @@ class Settings:
             'media_bytes',
             'media_file_bytes',
             'image_token_reserve',
+            'max_search_calls',
+            'max_web_read_calls',
+            'search_max_results',
+            'page_max_chars',
             'max_stickers',
         ):
-            if not isinstance(getattr(self, name), int) or getattr(self, name) <= 0:
+            if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(f'Invalid {name}')
         if (
-            self.max_messages > 2
-            or self.input_tokens < 2048
+            self.input_tokens < 2048
             or self.debounce < 0
             or self.max_batch_wait < self.debounce
         ):
             raise ValueError('Invalid scheduler/context limits')
-        value = self.sticker_cooldown
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-            raise ValueError('Invalid sticker_cooldown')
+        for name in ('send_interval_seconds', 'sticker_cooldown'):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError(f'Invalid {name}')
         if type(self.sticker_prefetch) is not int or not 0 <= self.sticker_prefetch <= 4:
             raise ValueError('Invalid sticker_prefetch')
+        if self.search_max_results > 5 or self.page_max_chars > 12000:
+            raise ValueError('Invalid web result limits')
 
 
 class Clock:

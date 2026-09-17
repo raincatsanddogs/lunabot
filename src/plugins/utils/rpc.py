@@ -54,7 +54,11 @@ class RpcSession(aiorpcx.RPCSession):
         args = request.args[1:]
         request.args = [self.id] + args
         resp = await aiorpcx.handler_invocation(handler_fn, request)()
-        self._logger.debug(f'{self.name}RPC服务的客户端 {self.id} 的请求 {request.method} {args} 返回: {resp}')
+        if request.method == 'send_action':
+            # 图片以临时 Base64 传输，不把整份图片复制进调试日志。
+            self._logger.debug(f'{self.name}RPC发送动作完成: {resp}')
+        else:
+            self._logger.debug(f'{self.name}RPC服务的客户端 {self.id} 的请求 {request.method} {args} 返回: {resp}')
         return resp
     
 
