@@ -159,7 +159,8 @@ async def get_guess_resp_event(bot: Bot, event: GroupMessageEvent):
     if event.user_id == int(bot.self_id): return
     if check_in_blacklist(event.user_id): return
     if check_is_banned_msg(event.get_plaintext()): return
-    if event.get_plaintext().startswith("/"): return
+    pfx = get_command_prefix()
+    if event.get_plaintext().startswith(pfx) or event.get_plaintext().startswith("/"): return
     gid = event.group_id
     queues = guess_resp_queues.get(gid, {})
     for q in queues.values():

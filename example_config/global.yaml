@@ -1,4 +1,5 @@
 log_level: "INFO"
+command_prefix: "#"  # 机器人的全局指令触发前缀，默认为 #（留空或设为 / 则为标准 / 前缀）
 superuser:
   - 12345678
 

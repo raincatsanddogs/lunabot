@@ -22,6 +22,13 @@ import requests
 
 
 SUPERUSER_CFG = global_config.item('superuser')
+COMMAND_PREFIX_CFG = global_config.item('command_prefix', default='#')
+
+def get_command_prefix() -> str:
+    """
+    获取全局指令触发前缀
+    """
+    return global_config.get('command_prefix', '#') or '#'
 
 DEFAULT_LQ_IMAGE_QUALITY_CFG = global_config.item('msg_send.low_quality_image.default_quality')
 DEFAULT_LQ_IMAGE_SUBSAMPLING_CFG = global_config.item('msg_send.low_quality_image.default_subsampling')
@@ -2143,6 +2150,18 @@ class CmdHandler:
                 self.commands.extend(cmd.get())
             else:
                 raise Exception(f'未知的指令类型 {type(cmd)}')
+
+        prefix = get_command_prefix()
+        # 统一将以 / 开头的指令替换为配置的触发前缀（如 #）
+        if prefix != '/':
+            formatted_commands = []
+            for cmd in self.commands:
+                if cmd.startswith('/'):
+                    formatted_commands.append(prefix + cmd[1:])
+                else:
+                    formatted_commands.append(cmd)
+            self.commands = formatted_commands
+
         self.commands = list(set(self.commands)) 
         self.commands.sort(key=lambda x: len(x), reverse=True)
             
@@ -2160,8 +2179,12 @@ class CmdHandler:
         self.banned_cmds = banned_cmds or []
         if isinstance(self.banned_cmds, str):
             self.banned_cmds = [self.banned_cmds]
+        if prefix != '/':
+            self.banned_cmds = [prefix + c[1:] if c.startswith('/') else c for c in self.banned_cmds]
         self.block_set = set()
         self.allow_bot_reply_msg = allow_bot_reply_msg
+        if help_command and help_command.startswith('/') and prefix != '/':
+            help_command = prefix + help_command[1:]
         self.help_command = help_command
         self.disable_help = disable_help
         if isinstance(help_trigger_condition, str):
@@ -2264,10 +2287,13 @@ class CmdHandler:
     @classmethod
     def find_cmd_help_doc(cls, cmd: str) -> Optional[HelpDocCmdPart]:
         cls.update_help_docs()
+        prefix = get_command_prefix()
+        slash_cmd = ('/' + cmd[len(prefix):]) if (prefix != '/' and cmd.startswith(prefix)) else None
         for doc in cls.help_docs.values():
             for part in doc.parts:
-                if part.cmds and cmd in part.cmds:
-                    return part
+                if part.cmds:
+                    if cmd in part.cmds or (slash_cmd and slash_cmd in part.cmds):
+                        return part
         return None
 
     @classmethod
@@ -2359,7 +2385,8 @@ class CmdHandler:
                         return
 
                     # 检测消息黑名单前缀与短语（排除黑名单管理指令本身，防止管理死锁）
-                    is_blacklist_mgmt = any(context.trigger_cmd.startswith(c) for c in ['/blacklist', 'blacklist'])
+                    pfx = get_command_prefix()
+                    is_blacklist_mgmt = any(context.trigger_cmd.startswith(c) for c in ['/blacklist', 'blacklist', f'{pfx}blacklist'])
                     if not is_blacklist_mgmt and check_is_banned_msg(plain_text):
                         self.logger.warning(f'取消包含黑名单前缀/短语的消息处理: {plain_text[:30]}')
                         return
@@ -2885,8 +2912,9 @@ async def _(ctx: HandlerContext):
         words = [x.strip() for x in shlex.split(args) if x.strip()]
     except:
         words = [x.strip() for x in args.split() if x.strip()]
+    pfx = get_command_prefix()
     if not words:
-        raise ReplyException("请指定要添加的黑名单精确匹配短语，例如：/blacklist exact add 今日运势")
+        raise ReplyException(f"请指定要添加的黑名单精确匹配短语，例如：{pfx}blacklist exact add 今日运势")
 
     msg = ""
     blacklist_exacts = utils_file_db.get("blacklist_exacts", [])
@@ -2911,8 +2939,9 @@ async def _(ctx: HandlerContext):
         words = [x.strip() for x in shlex.split(args) if x.strip()]
     except:
         words = [x.strip() for x in args.split() if x.strip()]
+    pfx = get_command_prefix()
     if not words:
-        raise ReplyException("请指定要删除的黑名单精确匹配短语，例如：/blacklist exact del 今日运势")
+        raise ReplyException(f"请指定要删除的黑名单精确匹配短语，例如：{pfx}blacklist exact del 今日运势")
 
     msg = ""
     blacklist_exacts = utils_file_db.get("blacklist_exacts", [])

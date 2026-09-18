@@ -70,14 +70,19 @@ class SekaiCmdHandler(CmdHandler):
     ):
         self.available_regions = regions or self.DEFAULT_AVAILABLE_REGIONS
         self.prefix_args = sorted(prefix_args or [''], key=lambda x: len(x), reverse=True)
+        pfx = get_command_prefix()
         all_region_commands = []
         for prefix in self.prefix_args:
             for region in ALL_SERVER_REGIONS:
                 for cmd in commands:
-                    assert not cmd.startswith(f"/{region}{prefix}")
-                    all_region_commands.append(cmd)
-                    all_region_commands.append(cmd.replace("/", f"/{prefix}"))
-                    all_region_commands.append(cmd.replace("/", f"/{region}{prefix}"))
+                    curr_pfx = pfx if cmd.startswith(pfx) else ('/' if cmd.startswith('/') else '')
+                    raw_cmd = cmd[len(curr_pfx):] if curr_pfx else cmd
+                    if curr_pfx:
+                        all_region_commands.append(f"{pfx}{raw_cmd}")
+                        all_region_commands.append(f"{pfx}{prefix}{raw_cmd}")
+                        all_region_commands.append(f"{pfx}{region}{prefix}{raw_cmd}")
+                    else:
+                        all_region_commands.append(cmd)
         all_region_commands = list(set(all_region_commands))
         self.original_commands = commands
         self.parse_uid_arg = parse_uid_arg
@@ -86,21 +91,24 @@ class SekaiCmdHandler(CmdHandler):
 
     async def additional_context_process(self, context: HandlerContext):
         # 处理指令区服前缀
+        pfx = get_command_prefix()
         with ProfileTimer("sekaihandler.parse_prefix"):
             cmd_region = None
             original_trigger_cmd = context.trigger_cmd
             for region in ALL_SERVER_REGIONS:
-                if context.trigger_cmd.strip().startswith(f"/{region}"):
+                target_pfx = f"{pfx}{region}"
+                if context.trigger_cmd.strip().startswith(target_pfx):
                     cmd_region = region
-                    context.trigger_cmd = context.trigger_cmd.replace(f"/{region}", "/")
+                    context.trigger_cmd = context.trigger_cmd.replace(target_pfx, pfx, 1)
                     break
             
             # 处理前缀参数
             prefix_arg = None
             for prefix in self.prefix_args:
-                if context.trigger_cmd.startswith(f"/{prefix}"):
+                target_pfx = f"{pfx}{prefix}"
+                if prefix and context.trigger_cmd.startswith(target_pfx):
                     prefix_arg = prefix
-                    context.trigger_cmd = context.trigger_cmd.replace(f"/{prefix}", "/")
+                    context.trigger_cmd = context.trigger_cmd.replace(target_pfx, pfx, 1)
                     break
 
             user_default_region = get_user_default_region(context.user_id, None)

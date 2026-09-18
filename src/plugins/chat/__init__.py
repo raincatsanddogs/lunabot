@@ -253,7 +253,13 @@ sessions: Dict[str, ChatSession] = {}
 query_msg_ids = set()
 
 # 询问
-CHAT_CMDS = ["/chat", ]
+def get_chat_cmds():
+    pfx = get_command_prefix()
+    cmds = [f"{pfx}chat"]
+    if pfx != "/":
+        cmds.append("/chat")
+    return cmds
+
 chat_request = CmdHandler(
     [""], logger, block=False, 
     help_command="/chat", help_trigger_condition=trigger_chat_help_condition,
@@ -278,21 +284,22 @@ async def _(ctx: HandlerContext):
         reply_msg = ctx.get_reply_msg()
         reply_id = ctx.get_reply_msg_id()
 
-        # 是否是/chat触发的消息
+        # 是否是/chat或#chat触发的消息
         triggered_by_chat_cmd = False
-        for chat_cmd in CHAT_CMDS:
+        for chat_cmd in get_chat_cmds():
             if query_text.strip().startswith(chat_cmd):
                 query_text = query_text.strip().removeprefix(chat_cmd)
                 triggered_by_chat_cmd = True
                 break
 
-        # 如果当前群组正在自动聊天或者关闭@触发，只有通过/chat触发的消息才回复
+        # 如果当前群组正在自动聊天或者关闭@触发，只有通过chat指令触发的消息才回复
         if is_group_msg(event) and (autochat_gwl.check_id(event.group_id) or not at_trigger_chat_gbl.check(event)):
             if not triggered_by_chat_cmd:
                 return
             
-        # /开头的消息不回复
-        if query_text.strip().startswith("/"):
+        # 指令前缀开头的消息不回复
+        cmd_pfx = get_command_prefix()
+        if query_text.strip().startswith(cmd_pfx) or query_text.strip().startswith("/"):
             return
 
         bot_name = await get_group_member_name(event.group_id, bot.self_id)
