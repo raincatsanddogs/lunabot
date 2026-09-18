@@ -23,6 +23,7 @@
 - [世界计划服务 (sekai)](./sekai.md)
 - [随机服务 (random)](./random.md)
 - [群消息记录服务 (record)](./record.md)
+- [复读机服务 (repeater)](./repeater.md)
 - [群消息统计服务 (sta)](./sta.md)
 - [水群查询服务 (water)](./water.md)
 - [加退群通知服务 (welcome)](./welcome.md)
