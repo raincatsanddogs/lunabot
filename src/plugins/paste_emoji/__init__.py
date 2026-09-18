@@ -6,7 +6,7 @@ from nonebot.rule import Rule
 from ..utils import (
     CmdHandler, HandlerContext, ColdDown, ReplyException,
     get_logger, get_file_db, get_group_black_list, get_exc_desc, truncate,
-    check_group_disabled, check_in_blacklist, check_self, check_superuser, on_safe_mode,
+    check_group_disabled, check_in_blacklist, check_is_banned_msg, check_self, check_superuser, on_safe_mode,
 )
 from .core import (
     PASTE_COMMANDS, START_COMMANDS, STOP_COMMANDS, BUFFET_EMOJI_ID,
@@ -115,7 +115,7 @@ async def handle_auto_paste(bot: Bot, event: GroupMessageEvent):
         return
     if check_group_disabled(event.group_id) or not gbl.check_id(event.group_id):
         return
-    if check_in_blacklist(event.user_id) or (on_safe_mode() and not check_superuser(event)):
+    if check_in_blacklist(event.user_id) or check_is_banned_msg(event.message.extract_plain_text()) or (on_safe_mode() and not check_superuser(event)):
         return
     if is_service_command(event):
         return

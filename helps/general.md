@@ -82,12 +82,26 @@
 - `/alive status 123456` 查看群聊123456中alive服务是否开启
 
 
-### 添加/删除黑名单
-🛠️ `/blacklist add` `/blacklist del`
-> 添加或删除黑名单，bot将不会响应黑名单中的用户的指令  
+### 黑名单管理（用户 / 消息前缀 / 包含短语 / 精确短语）
+🛠️ `/blacklist`
+> 全局黑名单管理，包含用户账号、触发前缀、包含短语和精确短语（指令前缀跟随 `global.yaml` 中的 `command_prefix` 设置，例如默认为 `#blacklist`）。  
+> 命中的消息将完全静默（不触发任何指令和 autochat 自动聊天，但聊天记录仍入库记录）。
 
-- `/blacklist add 123456` 添加用户123456到黑名单
-- `/blacklist del 123456` 删除用户123456从黑名单
+- `/blacklist add 123456` 添加用户到黑名单
+- `/blacklist del 123456` 从黑名单删除用户
+- `/blacklist list` 查看全局黑名单总览（用户、前缀、包含短语、精确短语）
+
+- `/blacklist prefix add # ! 。` 添加消息屏蔽前缀（以指定字符/词开头即完全静默）
+- `/blacklist prefix del #` 删除消息屏蔽前缀
+- `/blacklist prefix list`（或 `/blacklist prefix`）查看当前所有屏蔽前缀
+
+- `/blacklist word add 菜单` 添加包含屏蔽短语（消息只要包含该词即完全静默，忽略大小写）
+- `/blacklist word del 菜单` 删除包含屏蔽短语
+- `/blacklist word list`（或 `/blacklist word`）查看当前所有包含屏蔽短语
+
+- `/blacklist exact add 今日运势` 添加精确屏蔽短语（消息文本完全一致时才静默，如不会屏蔽“今日运势怎么样”）
+- `/blacklist exact del 今日运势` 删除精确屏蔽短语
+- `/blacklist exact list`（或 `/blacklist exact`）查看当前所有精确屏蔽短语
 
 
 ### 获取当日消息发送量

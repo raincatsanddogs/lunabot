@@ -44,7 +44,12 @@ async def record_new_message(bot: Bot, event: MessageEvent):
         return
     if not chat_gwl.check_id(event.group_id) or not autochat_gwl.check_id(event.group_id):
         return
-    if event.message.extract_plain_text().strip().startswith(('/um', '/autochat um', '/autochat sticker')):
+    if check_in_blacklist(event.user_id):
+        return
+    plain_text = event.message.extract_plain_text()
+    if check_is_banned_msg(plain_text):
+        return
+    if plain_text.strip().startswith(('/um', '/autochat um', '/autochat sticker')):
         return
     get_autochat_store().add_event(
         AutochatEvent(

@@ -798,6 +798,51 @@ def check_in_blacklist(user_id: int):
     blacklist = utils_file_db.get('blacklist', [])
     return int(user_id) in blacklist or int(user_id) in HARDCODED_BLACKLIST_USERS
 
+def get_blacklist_prefixes() -> List[str]:
+    """
+    获取全局黑名单消息前缀列表
+    """
+    return utils_file_db.get('blacklist_prefixes', [])
+
+def get_blacklist_words() -> List[str]:
+    """
+    获取全局黑名单短语列表
+    """
+    return utils_file_db.get('blacklist_words', [])
+
+def get_blacklist_exacts() -> List[str]:
+    """
+    获取全局黑名单精确匹配短语列表
+    """
+    return utils_file_db.get('blacklist_exacts', [])
+
+def check_is_banned_msg(text: str) -> bool:
+    """
+    检查消息是否命中全局黑名单精确匹配、前缀或短语（不区分大小写）
+    """
+    if not text:
+        return False
+    text_lower = text.strip().lower()
+    if not text_lower:
+        return False
+    
+    # 1. 检查精确/完全匹配短语
+    for exact in get_blacklist_exacts():
+        if exact and text_lower == exact.strip().lower():
+            return True
+
+    # 2. 检查前缀
+    for prefix in get_blacklist_prefixes():
+        if prefix and text_lower.startswith(prefix.strip().lower()):
+            return True
+            
+    # 3. 检查短语包含
+    for word in get_blacklist_words():
+        if word and word.strip().lower() in text_lower:
+            return True
+            
+    return False
+
 def check_group_disabled(group_id: int):
     """
     检查群聊是否被全局禁用
@@ -2313,6 +2358,12 @@ class CmdHandler:
                     if any([banned_cmd in context.trigger_cmd for banned_cmd in self.banned_cmds]):
                         return
 
+                    # 检测消息黑名单前缀与短语（排除黑名单管理指令本身，防止管理死锁）
+                    is_blacklist_mgmt = any(context.trigger_cmd.startswith(c) for c in ['/blacklist', 'blacklist'])
+                    if not is_blacklist_mgmt and check_is_banned_msg(plain_text):
+                        self.logger.warning(f'取消包含黑名单前缀/短语的消息处理: {plain_text[:30]}')
+                        return
+
                     context.message_id = event.message_id
                     context.user_id = event.user_id
                     if is_group_msg(event):
@@ -2696,6 +2747,219 @@ async def _(ctx: HandlerContext):
     utils_file_db.set("blacklist", blacklist)
 
     return await ctx.asend_reply_msg(msg.strip())
+
+# -------------------- 黑名单前缀管理 -------------------- #
+
+# 添加屏蔽前缀
+_handler = CmdHandler(['/blacklist prefix add'], utils_logger)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    args = ctx.get_args().strip()
+    prefixes = [x.strip() for x in args.split() if x.strip()]
+    if not prefixes:
+        raise ReplyException("请指定要添加的黑名单前缀，例如：/blacklist prefix add # !")
+
+    msg = ""
+    blacklist_prefixes = utils_file_db.get("blacklist_prefixes", [])
+    for prefix in prefixes:
+        if prefix in blacklist_prefixes:
+            msg += f'前缀 "{prefix}" 已在黑名单中\n'
+        else:
+            blacklist_prefixes.append(prefix)
+            msg += f'已将前缀 "{prefix}" 添加到黑名单\n'
+    utils_file_db.set("blacklist_prefixes", blacklist_prefixes)
+
+    return await ctx.asend_reply_msg(msg.strip())
+
+# 删除屏蔽前缀
+_handler = CmdHandler(['/blacklist prefix del'], utils_logger)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    args = ctx.get_args().strip()
+    prefixes = [x.strip() for x in args.split() if x.strip()]
+    if not prefixes:
+        raise ReplyException("请指定要删除的黑名单前缀，例如：/blacklist prefix del # !")
+
+    msg = ""
+    blacklist_prefixes = utils_file_db.get("blacklist_prefixes", [])
+    for prefix in prefixes:
+        if prefix not in blacklist_prefixes:
+            msg += f'前缀 "{prefix}" 不在黑名单中\n'
+        else:
+            blacklist_prefixes.remove(prefix)
+            msg += f'已将前缀 "{prefix}" 从黑名单中删除\n'
+    utils_file_db.set("blacklist_prefixes", blacklist_prefixes)
+
+    return await ctx.asend_reply_msg(msg.strip())
+
+# 查询屏蔽前缀列表
+_handler = CmdHandler(['/blacklist prefix list', '/blacklist prefix'], utils_logger, priority=1)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    blacklist_prefixes = utils_file_db.get("blacklist_prefixes", [])
+    if not blacklist_prefixes:
+        return await ctx.asend_reply_msg("当前未配置任何黑名单前缀")
+    prefix_items = '\n'.join([f"- {p}" for p in blacklist_prefixes])
+    return await ctx.asend_reply_msg(f"当前黑名单前缀列表 ({len(blacklist_prefixes)} 个):\n{prefix_items}")
+
+
+# -------------------- 黑名单短语管理 -------------------- #
+
+# 添加屏蔽短语
+_handler = CmdHandler(['/blacklist word add'], utils_logger)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    args = ctx.get_args().strip()
+    import shlex
+    try:
+        words = [x.strip() for x in shlex.split(args) if x.strip()]
+    except:
+        words = [x.strip() for x in args.split() if x.strip()]
+    if not words:
+        raise ReplyException("请指定要添加的黑名单短语，例如：/blacklist word add 菜单 今日运势")
+
+    msg = ""
+    blacklist_words = utils_file_db.get("blacklist_words", [])
+    for word in words:
+        if word in blacklist_words:
+            msg += f'短语 "{word}" 已在黑名单中\n'
+        else:
+            blacklist_words.append(word)
+            msg += f'已将短语 "{word}" 添加到黑名单\n'
+    utils_file_db.set("blacklist_words", blacklist_words)
+
+    return await ctx.asend_reply_msg(msg.strip())
+
+# 删除屏蔽短语
+_handler = CmdHandler(['/blacklist word del'], utils_logger)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    args = ctx.get_args().strip()
+    import shlex
+    try:
+        words = [x.strip() for x in shlex.split(args) if x.strip()]
+    except:
+        words = [x.strip() for x in args.split() if x.strip()]
+    if not words:
+        raise ReplyException("请指定要删除的黑名单短语，例如：/blacklist word del 菜单 今日运势")
+
+    msg = ""
+    blacklist_words = utils_file_db.get("blacklist_words", [])
+    for word in words:
+        if word not in blacklist_words:
+            msg += f'短语 "{word}" 不在黑名单中\n'
+        else:
+            blacklist_words.remove(word)
+            msg += f'已将短语 "{word}" 从黑名单中删除\n'
+    utils_file_db.set("blacklist_words", blacklist_words)
+
+    return await ctx.asend_reply_msg(msg.strip())
+
+# 查询屏蔽短语列表
+_handler = CmdHandler(['/blacklist word list', '/blacklist word'], utils_logger, priority=1)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    blacklist_words = utils_file_db.get("blacklist_words", [])
+    if not blacklist_words:
+        return await ctx.asend_reply_msg("当前未配置任何黑名单短语")
+    word_items = '\n'.join([f"- {w}" for w in blacklist_words])
+    return await ctx.asend_reply_msg(f"当前黑名单短语列表 ({len(blacklist_words)} 个):\n{word_items}")
+
+
+# -------------------- 黑名单精确短语管理 -------------------- #
+
+# 添加精确屏蔽短语
+_handler = CmdHandler(['/blacklist exact add'], utils_logger)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    args = ctx.get_args().strip()
+    import shlex
+    try:
+        words = [x.strip() for x in shlex.split(args) if x.strip()]
+    except:
+        words = [x.strip() for x in args.split() if x.strip()]
+    if not words:
+        raise ReplyException("请指定要添加的黑名单精确匹配短语，例如：/blacklist exact add 今日运势")
+
+    msg = ""
+    blacklist_exacts = utils_file_db.get("blacklist_exacts", [])
+    for word in words:
+        if word in blacklist_exacts:
+            msg += f'精确短语 "{word}" 已在黑名单中\n'
+        else:
+            blacklist_exacts.append(word)
+            msg += f'已将精确短语 "{word}" 添加到黑名单\n'
+    utils_file_db.set("blacklist_exacts", blacklist_exacts)
+
+    return await ctx.asend_reply_msg(msg.strip())
+
+# 删除精确屏蔽短语
+_handler = CmdHandler(['/blacklist exact del'], utils_logger)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    args = ctx.get_args().strip()
+    import shlex
+    try:
+        words = [x.strip() for x in shlex.split(args) if x.strip()]
+    except:
+        words = [x.strip() for x in args.split() if x.strip()]
+    if not words:
+        raise ReplyException("请指定要删除的黑名单精确匹配短语，例如：/blacklist exact del 今日运势")
+
+    msg = ""
+    blacklist_exacts = utils_file_db.get("blacklist_exacts", [])
+    for word in words:
+        if word not in blacklist_exacts:
+            msg += f'精确短语 "{word}" 不在黑名单中\n'
+        else:
+            blacklist_exacts.remove(word)
+            msg += f'已将精确短语 "{word}" 从黑名单中删除\n'
+    utils_file_db.set("blacklist_exacts", blacklist_exacts)
+
+    return await ctx.asend_reply_msg(msg.strip())
+
+# 查询精确屏蔽短语列表
+_handler = CmdHandler(['/blacklist exact list', '/blacklist exact'], utils_logger, priority=1)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    blacklist_exacts = utils_file_db.get("blacklist_exacts", [])
+    if not blacklist_exacts:
+        return await ctx.asend_reply_msg("当前未配置任何黑名单精确匹配短语")
+    exact_items = '\n'.join([f"- {w}" for w in blacklist_exacts])
+    return await ctx.asend_reply_msg(f"当前黑名单精确匹配短语列表 ({len(blacklist_exacts)} 个):\n{exact_items}")
+
+# 查询用户黑名单列表 / 全局黑名单总览
+_handler = CmdHandler(['/blacklist list'], utils_logger, priority=1)
+_handler.check_superuser()
+@_handler.handle()
+async def _(ctx: HandlerContext):
+    blacklist = utils_file_db.get("blacklist", [])
+    blacklist_prefixes = utils_file_db.get("blacklist_prefixes", [])
+    blacklist_words = utils_file_db.get("blacklist_words", [])
+    blacklist_exacts = utils_file_db.get("blacklist_exacts", [])
+
+    user_str = '、'.join(str(u) for u in blacklist) if blacklist else "无"
+    prefix_str = '、'.join(f'"{p}"' for p in blacklist_prefixes) if blacklist_prefixes else "无"
+    word_str = '、'.join(f'"{w}"' for w in blacklist_words) if blacklist_words else "无"
+    exact_str = '、'.join(f'"{e}"' for e in blacklist_exacts) if blacklist_exacts else "无"
+
+    msg = (
+        f"【全局黑名单总览】\n"
+        f"👤 屏蔽用户: {user_str}\n"
+        f"🔤 屏蔽前缀: {prefix_str}\n"
+        f"💬 包含屏蔽短语: {word_str}\n"
+        f"🎯 精确屏蔽短语: {exact_str}"
+    )
+    return await ctx.asend_reply_msg(msg)
 
 # 获取当日消息发送数量
 _handler = CmdHandler(['/send count'], utils_logger)
