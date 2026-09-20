@@ -360,10 +360,27 @@ class Engine(SendActions):
                 e.speaker_id in policy["focus_user_ids"] and not addressed_elsewhere(self, e)
                 for e in events
             )
-            probability = (
+            base_probability = (
                 1.0 if direct else policy["followup_p"] if followup else policy["ambient_p"]
             )
             reason = 'direct' if direct else 'followup' if followup else 'ambient'
+
+            # 关键词扫描与增量计算
+            matched_keywords = {}
+            batch_text = "\n".join(e.text for e in events if e.speaker_id != scope.bot_id).lower()
+            for kw, delta in self.settings.trigger_keywords.items():
+                if kw.lower() in batch_text:
+                    matched_keywords[kw] = delta
+            keyword_delta = sum(matched_keywords.values())
+            hard_blocked = any(delta <= -1.0 for delta in matched_keywords.values())
+
+            if hard_blocked:
+                probability = 0.0
+            elif direct:
+                probability = 1.0
+            else:
+                probability = max(0.0, min(1.0, base_probability + keyword_delta))
+
             seed = dump([self.settings.seed, scope.key, [e.message_id for e in events]])
             draw = int(hashlib.sha256(seed.encode()).hexdigest()[:13], 16) / 16**13
             batch_id, decision, status = self.store.batch(
@@ -373,6 +390,8 @@ class Engine(SendActions):
                     "memory_revision": self.store.revision(scope),
                     "draw": draw,
                     "probability": probability,
+                    "base_probability": base_probability,
+                    "matched_keywords": matched_keywords,
                     "wake": draw < probability,
                     "reason": reason,
                     "message_ids": [e.message_id for e in events],
@@ -383,6 +402,20 @@ class Engine(SendActions):
                 self.store.mark_handled(events)
                 self.store.batch_done(batch_id, "silent")
             else:
+                effective_keywords = decision.get("matched_keywords", matched_keywords)
+                if any(delta > 0 for delta in effective_keywords.values()):
+                    now = self.clock.now()
+                    updated_state = False
+                    for e in events:
+                        if e.speaker_id != scope.bot_id:
+                            state['contacts'][e.speaker_id] = {
+                                'message_id': e.message_id,
+                                'expires_at': now + self.settings.attention_seconds,
+                            }
+                            updated_state = True
+                    if updated_state:
+                        state['unanswered'] = 0
+                        self.store.save_state(scope, state)
                 if not unfinished:
                     self.budget(scope, "wakes", self.settings.wakes_per_minute, 60, True)
                 self.store.batch_done(batch_id, "running")

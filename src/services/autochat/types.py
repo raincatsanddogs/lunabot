@@ -125,6 +125,7 @@ class Settings:
     fallback_models: list[str] = field(default_factory=list)
     image_token_reserve: int = 4096
     timeout: float = 120
+    trigger_keywords: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self):
         for name in ('ambient_p', 'followup_p'):
@@ -170,6 +171,11 @@ class Settings:
             raise ValueError('Invalid sticker_prefetch')
         if self.search_max_results > 5 or self.page_max_chars > 12000:
             raise ValueError('Invalid web result limits')
+        if not isinstance(self.trigger_keywords, dict) or any(
+            not isinstance(k, str) or not k or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+            for k, v in self.trigger_keywords.items()
+        ):
+            raise ValueError('Invalid trigger_keywords')
 
 
 class Clock:

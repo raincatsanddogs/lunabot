@@ -20,6 +20,7 @@ FIELDS = {
     'chat.trigger.debounce': 'debounce',
     'chat.trigger.max_batch_wait': 'max_batch_wait',
     'chat.trigger.seed': 'seed',
+    'chat.trigger.keywords': 'trigger_keywords',
     'chat.budget.wakes_per_minute': 'wakes_per_minute',
     'chat.budget.calls_per_minute': 'calls_per_minute',
     'chat.budget.max_rounds': 'max_rounds',
@@ -124,6 +125,16 @@ def parse_config(raw):
         if key not in values:
             continue
         value, default = values[key], defaults[field]
+        if field == 'trigger_keywords':
+            if value is None:
+                value = {}
+            if not isinstance(value, dict) or any(
+                not isinstance(k, str) or not k or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                for k, v in value.items()
+            ):
+                raise ValueError(f'{key}: expected mapping of keyword strings to finite numbers')
+            settings[field] = {str(k): float(v) for k, v in value.items()}
+            continue
         if isinstance(default, str):
             valid = isinstance(value, str)
         elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout', 'send_interval_seconds', 'sticker_cooldown'):

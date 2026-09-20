@@ -28,6 +28,13 @@ chat:
     debounce: 2
     max_batch_wait: 5
     seed: 42
+    keywords:
+      # 正值：提升主动唤醒概率，唤醒并回复后建立互动跟进（例如提到了名字或感兴趣的话题）
+      "positive": 0.2
+      # 负值：降低唤醒概率（抑制闲聊与跟进）
+      "negative": -0.5
+      # 强阻断（<= -1.0）：即使直接 @ 或引用回复也彻底静默
+      "block": -1.0
   budget:
     wakes_per_minute: 3
     calls_per_minute: 6
