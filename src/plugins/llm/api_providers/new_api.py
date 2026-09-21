@@ -6,8 +6,8 @@ import os
 
 
 class NewApiApiProvider(ApiProvider):
-    def __init__(self):
-        super().__init__(name="new-api", code="na")
+    def __init__(self, name: str = "new-api", code: str = "na"):
+        super().__init__(name=name, code=code)
 
     def get_client(self) -> AsyncOpenAI:
         return AsyncOpenAI(

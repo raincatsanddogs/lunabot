@@ -59,9 +59,8 @@ class ApiProvider:
         code: str,
     ):
         self.name = name
-        self.code = code
-
         self.config = Config(f'llm.providers.{name}')
+        self.code = str(self.config.get('code', default=code) or code)
         self.models: List[LlmModel] = []
         self.models_mtime = None
 
@@ -111,6 +110,9 @@ class ApiProvider:
     def update_models(self):
         mtime = self.config.mtime()
         if self.models_mtime != mtime:
+            cfg_code = self.config.get('code', None)
+            if cfg_code:
+                self.code = str(cfg_code)
             def parse_price(d, k):
                 if not isinstance(d.get(k), str):
                     return

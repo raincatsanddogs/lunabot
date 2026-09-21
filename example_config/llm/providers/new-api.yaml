@@ -1,3 +1,6 @@
+# 供应商代号（选填，默认为 na；若配置多个 NewAPI 实例，可在新文件中指定不同代号如 na2）
+code: "na"
+
 qps_limit: 5
 quota_sync_interval_sec: 60*60*6
 price_unit: "$"

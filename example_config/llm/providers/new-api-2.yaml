@@ -1,0 +1,20 @@
+# 额外的 New API 供应商示例（放入 config/llm/providers/ 即可被自动发现并加载）
+code: "na2"
+
+qps_limit: 5
+quota_sync_interval_sec: 60*60*6
+price_unit: "$"
+
+api_key: "xxx"
+base_url: "https://xxx/v1"
+
+models:
+  - name: "gemini-2.5-flash"
+    model_id: "gemini-2.5-flash"
+    is_multimodal: true
+    supports_tools: true
+
+  - name: "gemini-2.5-pro"
+    model_id: "gemini-2.5-pro"
+    is_multimodal: true
+    supports_tools: true

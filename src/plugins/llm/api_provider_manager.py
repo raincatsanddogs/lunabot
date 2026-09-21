@@ -8,18 +8,63 @@ from ..llm.api_providers.new_api import NewApiApiProvider
 from typing import Tuple
 
 
+import os
+import os.path as osp
+from ..common.config import CONFIG_DIR, pjoin
+
+
 class ApiProviderManager:
     """
     管理所有供应方和供应方的模型
     """
 
-    def __init__(self, providers: List[AiyydsApiProvider]):
-        self.providers = providers
+    def __init__(self, providers: List[ApiProvider]):
+        self.providers = list(providers)
+
+    def _ensure_extra_providers(self):
+        """
+        动态扫描并加载额外的供应商配置（例如 new-api-2 等 OpenAI 兼容供应商）
+        """
+        known_names = {p.name for p in self.providers}
+        # 1. 从 llm.llm 的 extra_providers 配置加载
+        try:
+            extra_cfgs = Config('llm.llm').get('extra_providers', [])
+            if isinstance(extra_cfgs, list):
+                for item in extra_cfgs:
+                    if isinstance(item, dict) and 'name' in item:
+                        name = item['name']
+                        code = item.get('code', name)
+                        if name not in known_names:
+                            self.providers.append(NewApiApiProvider(name=name, code=code))
+                            known_names.add(name)
+        except Exception:
+            pass
+
+        # 2. 从 providers 目录自动扫描带有 models 或 base_url 的 yaml
+        for base_dir in [pjoin(CONFIG_DIR, 'llm', 'providers'), pjoin('example_config', 'llm', 'providers')]:
+            if not osp.exists(base_dir):
+                continue
+            try:
+                for filename in os.listdir(base_dir):
+                    if not filename.endswith(('.yaml', '.yml')):
+                        continue
+                    stem = filename.rsplit('.', 1)[0]
+                    if stem in known_names or stem == 'tavily':
+                        continue
+                    cfg = Config(f'llm.providers.{stem}')
+                    if cfg.get('models', None) is not None or cfg.get('base_url', None) is not None:
+                        code = cfg.get('code', stem)
+                        provider = NewApiApiProvider(name=stem, code=code)
+                        self.providers.append(provider)
+                        known_names.add(stem)
+            except Exception:
+                pass
 
     def get_provider(self, name_or_code: str) -> Optional[ApiProvider]:
         """
         根据名称或代号获取供应方
         """
+        self._ensure_extra_providers()
         for provider in self.providers:
             if provider.code == name_or_code or provider.name == name_or_code:
                 provider.update_models()
@@ -30,6 +75,7 @@ class ApiProviderManager:
         """
         获取所有供应方
         """
+        self._ensure_extra_providers()
         for provider in self.providers:
             provider.update_models()
         return self.providers
@@ -38,6 +84,7 @@ class ApiProviderManager:
         """
         获取所有model
         """
+        self._ensure_extra_providers()
         ret = []
         for provider in self.providers:
             provider.update_models()
@@ -101,6 +148,7 @@ class ApiProviderManager:
         """
         根据模型名称获取模型
         """
+        self._ensure_extra_providers()
         provider_name, model_name = self.split_provider_model_name(model_name)
         
         # 如果没有指定供应方，在所有里搜索
