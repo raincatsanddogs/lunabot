@@ -72,8 +72,9 @@ class ConfigItem:
     """
     配置项类，用于动态延迟获取配置文件中的单个配置项
     """
-    def __init__(self, config: 'Config', key: str | tuple[str] | Any):
+    def __init__(self, config: 'Config', key: str | tuple[str] | Any, default=None):
         self.config = config
+        self.default = default
         if isinstance(key, str):
             self.keys = key.split('.')
         elif isinstance(key, (list, tuple)):
@@ -82,6 +83,8 @@ class ConfigItem:
             self.keys = [key]
             
     def get(self, default=None, raise_exc: Optional[bool]=None) -> Any:
+        if default is None:
+            default = self.default
         return self.config.get(self.keys, default, raise_exc)
 
 
@@ -141,8 +144,8 @@ class Config:
         self._ensure_updated()
         return _GlobalConfigState._cache.get(self.name, ConfigData()).mtime
     
-    def item(self, key: str | tuple[str] | Any) -> ConfigItem:
-        return ConfigItem(self, key)
+    def item(self, key: str | tuple[str] | Any, default=None) -> ConfigItem:
+        return ConfigItem(self, key, default=default)
     
 
 def get_cfg_or_value(obj: Union[ConfigItem, Any], default=None, raise_exc: Optional[bool]=None) -> Any:
