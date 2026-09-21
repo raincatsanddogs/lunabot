@@ -28,7 +28,7 @@ class ApiProviderManager:
         known_names = {p.name for p in self.providers}
         # 1. 从 llm.llm 的 extra_providers 配置加载
         try:
-            extra_cfgs = Config('llm.llm').get('extra_providers', [])
+            extra_cfgs = Config('llm.llm').get('extra_providers', default=[], raise_exc=False)
             if isinstance(extra_cfgs, list):
                 for item in extra_cfgs:
                     if isinstance(item, dict) and 'name' in item:
@@ -40,20 +40,22 @@ class ApiProviderManager:
         except Exception:
             pass
 
-        # 2. 从 providers 目录自动扫描带有 models 或 base_url 的 yaml
-        for base_dir in [pjoin(CONFIG_DIR, 'llm', 'providers'), pjoin('example_config', 'llm', 'providers')]:
-            if not osp.exists(base_dir):
-                continue
+        # 2. 从 config/llm/providers 目录自动扫描带有 models 或 base_url 的 yaml
+        providers_dir = pjoin(CONFIG_DIR, 'llm', 'providers')
+        if osp.exists(providers_dir):
             try:
-                for filename in os.listdir(base_dir):
+                for filename in os.listdir(providers_dir):
                     if not filename.endswith(('.yaml', '.yml')):
                         continue
                     stem = filename.rsplit('.', 1)[0]
                     if stem in known_names or stem == 'tavily':
                         continue
                     cfg = Config(f'llm.providers.{stem}')
-                    if cfg.get('models', None) is not None or cfg.get('base_url', None) is not None:
-                        code = cfg.get('code', stem)
+                    if (
+                        cfg.get('models', default=None, raise_exc=False) is not None
+                        or cfg.get('base_url', default=None, raise_exc=False) is not None
+                    ):
+                        code = cfg.get('code', default=stem, raise_exc=False)
                         provider = NewApiApiProvider(name=stem, code=code)
                         self.providers.append(provider)
                         known_names.add(stem)
