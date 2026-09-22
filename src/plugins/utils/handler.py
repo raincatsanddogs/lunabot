@@ -423,12 +423,18 @@ async def get_image_cq(
             image = Image.open(io.BytesIO(image))
             return await get_image_cq(image, *args)
         # 如果是本地路径
-        if isinstance(image, str):
-            if not os.path.exists(image):
-                raise Exception(f'图片文件不存在: {image}')
+        if isinstance(image, (str, Path)):
+            image_str = str(image)
+            if not os.path.exists(image_str):
+                raise Exception(f'图片文件不存在: {image_str}')
             if send_url_as_is:
-                return f'[CQ:image,file=file://{os.path.abspath(image)}]'
-            image = open_image(image)
+                if global_config.get('msg_send.send_file_as_base64', True):
+                    import base64
+                    with open(image_str, 'rb') as f:
+                        b64_data = base64.b64encode(f.read()).decode('utf-8')
+                    return f'[CQ:image,file=base64://{b64_data}]'
+                return f'[CQ:image,file=file://{os.path.abspath(image_str)}]'
+            image = open_image(image_str)
             return await get_image_cq(image, *args)
 
         is_gif_img = is_animated(image) or image.mode == 'P'

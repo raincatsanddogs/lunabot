@@ -634,8 +634,10 @@ async def _(ctx: SekaiHandlerContext):
             msg = f"{diff.upper()}模式听歌识曲{tip_text}"
             msg += f"，限时{int(GUESS_MUSIC_TIMEOUT.total_seconds())}秒"
             msg += "（无需回复，直接发送歌名/id/别名）"
-            await gctx.asend_msg(msg)
-            await gctx.asend_msg(f"[CQ:record,file=file://{os.path.abspath(clipped_audio_path)}]")
+            import base64
+            with open(clipped_audio_path, 'rb') as f:
+                b64_audio = base64.b64encode(f.read()).decode('utf-8')
+            await gctx.asend_msg(f"[CQ:record,file=base64://{b64_audio}]")
             gctx.data['music'] = music
             gctx.data['cover_thumb'] = cover_thumb
 
