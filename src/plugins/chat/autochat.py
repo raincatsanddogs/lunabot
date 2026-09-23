@@ -211,11 +211,12 @@ async def handle_send_action(cid, version, consumer_id, bot_id, group_id, action
         if action['payload']['segments'] != compact:
             raise ValueError('Action payload changed')
         response = await bot.send_group_msg(
-            group_id=gid, message=Message(wire)
+            group_id=gid, message=Message([MessageSegment(s['type'], s['data']) for s in wire])
         )
         store.finish_action(key, 'sent', response)
         return {'state': 'sent', **response}
     except Exception:
+        logger.print_exc(f'发送 autochat 动作 {action_id} 失败')
         store.finish_action(key, 'unknown', {})
         return {'state': 'unknown'}
 
