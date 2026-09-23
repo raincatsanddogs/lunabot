@@ -1224,6 +1224,19 @@ async def get_event_of_music(ctx: SekaiHandlerContext, mid: int) -> Dict:
         return None
     return await ctx.md.events.find_by_id(em['eventId'])
 
+# 获取歌曲分类（MV类型）
+async def get_music_categories(ctx: SekaiHandlerContext, mid: int) -> list[str]:
+    music = await ctx.md.musics.find_by_id(mid)
+    if music and 'categories' in music and music['categories']:
+        return music['categories']
+    try:
+        categories = await ctx.md.music_categories.find_by('musicId', mid, mode='all')
+        if categories:
+            return [item['musicCategoryName'] for item in categories]
+    except Exception as e:
+        logger.debug(f"获取歌曲{mid}分类失败: {get_exc_desc(e)}")
+    return []
+
 # 获取歌曲详情图片
 async def compose_music_detail_image(ctx: SekaiHandlerContext, mid: int, title: str=None, title_style: TextStyle=None, title_shadow=False):
     music = await ctx.md.musics.find_by_id(mid)
@@ -1235,7 +1248,7 @@ async def compose_music_detail_image(ctx: SekaiHandlerContext, mid: int, title: 
     composer        = music["composer"]
     lyricist        = music["lyricist"]
     arranger        = music["arranger"]
-    mv_info         = music['categories']
+    mv_info         = await get_music_categories(ctx, mid)
     publish_time    = datetime.fromtimestamp(music['publishedAt'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
 
     if music['isFullLength']:

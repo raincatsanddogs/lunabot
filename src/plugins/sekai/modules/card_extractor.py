@@ -246,6 +246,8 @@ class CardExtractor:
         初始化等级和技能等级的模板
         """
         for font in self.LEVEL_FONTS:
+            if not os.path.exists(font.path):
+                continue
             x_offset, y_offset = font.x_offset, font.y_offset
             font = ImageFont.FreeTypeFont(font.path, size=font.size)
             lv_region = (10, 105, 60, 20)

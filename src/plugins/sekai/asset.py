@@ -590,6 +590,7 @@ class RegionMasterDataCollection:
         self._region = region
 
         self.musics                                                         = RegionMasterDataWrapper(region, "musics")
+        self.music_categories                                               = RegionMasterDataWrapper(region, "musicCategories")
         self.music_diffs                                                    = RegionMasterDataWrapper(region, "musicDifficulties")
         self.vlives                                                         = RegionMasterDataWrapper(region, "virtualLives")
         self.events                                                         = RegionMasterDataWrapper(region, "events")
@@ -700,6 +701,7 @@ MasterDataManager.set_index_keys("mysekaiCharacterTalkConditionGroups", ['groupI
 MasterDataManager.set_index_keys("mysekaiCharacterTalkConditions", ['id', 'mysekaiCharacterTalkConditionType'])
 MasterDataManager.set_index_keys("mysekaiMusicRecords", ['id', 'externalId'])
 MasterDataManager.set_index_keys("musicTags", ['id', 'musicId'])
+MasterDataManager.set_index_keys("musicCategories", ['id', 'musicId'])
 MasterDataManager.set_index_keys("eventDeckBonuses", ['id', 'eventId'])
 MasterDataManager.set_index_keys("eventCards", ['id', 'eventId'])
 MasterDataManager.set_index_keys("musicDifficulties", ['id', 'musicId'])
