@@ -477,7 +477,7 @@ class Engine(SendActions):
             - 256
         )
 
-    async def prepare_context(self, scope, force=False, model=None, required_ids=()):
+    async def prepare_context(self, scope, force=False, model=None, required_ids=(), include_tail=True):
         pending_media = list(self.ingestions.get(scope.key, ()))
         if pending_media:
             await asyncio.gather(*(asyncio.shield(future) for future in pending_media))
@@ -517,12 +517,14 @@ class Engine(SendActions):
         if state.get('awaiting', {}).get('expires_at', 0) <= self.clock.now():
             state['awaiting'] = {}
         current = state['context'] + [self.event_message(e) for e in events]
+        rebuilt = False
         if (
             force
             or not state["context"]
             or state.get('model_signature') != signature
             or estimate(current, reserve) > budget * 0.85
         ):
+            rebuilt = True
             recent = self.store.events(scope, now=self.clock.now(), limit=20, latest=True)
             recent = [e for e in recent if not e.text.strip().startswith('/')]
             # Required delayed/out-of-order events get a place at the segment tail.
@@ -658,44 +660,45 @@ class Engine(SendActions):
             state["context"].append(self.event_message(event))
             state["context_cursor"] = max(state["context_cursor"], event.seq)
             state['visible_sources'].append(event.message_id)
-        # Current state belongs at the tail, never in the frozen system prefix.
-        participants = sorted(
-            {e.speaker_id for e in [*events, *required] if e.speaker_id != scope.bot_id}
-        )[-4:]
-        facts = (
-            self.store.memories(scope, participants, limit=4, now=self.clock.now())
-            if participants
-            else []
-        )
-        candidates = (
-            self.store.memories(
-                scope,
-                participants,
-                statuses=('candidate', 'pending_review'),
-                limit=4,
-                now=self.clock.now(),
+        if include_tail or rebuilt:
+            # Current state belongs at the tail, never in the frozen system prefix.
+            participants = sorted(
+                {e.speaker_id for e in [*events, *required] if e.speaker_id != scope.bot_id}
+            )[-4:]
+            facts = (
+                self.store.memories(scope, participants, limit=4, now=self.clock.now())
+                if participants
+                else []
             )
-            if participants
-            else []
-        )
-        while facts and len(dump(facts).encode('utf-8')) > 2500:
-            facts.pop()
-        state["context"].append(
-            {
-                "role": "user",
-                "content": dump(
-                    {
-                        "now": self.clock.now(),
-                        "trigger_policy": self.policy(state),
-                        "current_user_facts": facts,
-                        'unverified_candidates': candidates,
-                        'unanswered_ambient_turns': state['unanswered'],
-                        'awaiting': state.get('awaiting', {}),
-                        'processing_message_ids': list(required_ids),
-                    }
-                ),
-            }
-        )
+            candidates = (
+                self.store.memories(
+                    scope,
+                    participants,
+                    statuses=('candidate', 'pending_review'),
+                    limit=4,
+                    now=self.clock.now(),
+                )
+                if participants
+                else []
+            )
+            while facts and len(dump(facts).encode('utf-8')) > 2500:
+                facts.pop()
+            state["context"].append(
+                {
+                    "role": "user",
+                    "content": dump(
+                        {
+                            "now": self.clock.now(),
+                            "trigger_policy": self.policy(state),
+                            "current_user_facts": facts,
+                            'unverified_candidates': candidates,
+                            'unanswered_ambient_turns': state['unanswered'],
+                            'awaiting': state.get('awaiting', {}),
+                            'processing_message_ids': list(required_ids),
+                        }
+                    ),
+                }
+            )
         self.store.save_state(scope, state)
         self.media.clean()
 

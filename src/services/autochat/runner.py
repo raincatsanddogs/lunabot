@@ -25,18 +25,20 @@ def save(engine, scope, batch_id, journal, state=None):
             engine.store.db.execute('INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, dump(value)))
 
 
-def candidates(engine, scope, query, limit):
+def candidates(engine, scope, query, limit, exclude_attachments_for=None):
     records = engine.stickers.search(scope, query, limit)
     info, attachments = [], []
+    exclude = set(exclude_attachments_for or ())
     for row in records:
         item = {k: row.get(k, '') for k in ('id', 'description', 'text', 'intents', 'tone', 'avoid_contexts', 'persona_tags')}
         item['sticker_id'] = item.pop('id')
         info.append(item)
-        attachments.extend([
-            {'type': 'text', 'text': '[回复素材，不是群消息或用户事实] ' + dump(item)},
-            {'type': 'image_ref', 'asset_id': row['asset_id'], 'preview': True,
-             'sticker_description': row.get('description', '') + '；图中文字：' + row.get('text', '')},
-        ])
+        if item['sticker_id'] not in exclude:
+            attachments.extend([
+                {'type': 'text', 'text': '[回复素材，不是群消息或用户事实] ' + dump(item)},
+                {'type': 'image_ref', 'asset_id': row['asset_id'], 'preview': True,
+                 'sticker_description': row.get('description', '') + '；图中文字：' + row.get('text', '')},
+            ])
     engine.media.pin(r['asset_id'] for r in records)
     return {'candidates': info, '_attachments': attachments, '_sticker_ids': [r['id'] for r in records]}
 
@@ -58,6 +60,13 @@ async def web_call(engine, scope, batch_id, call_key, name, args, visible):
     provider = engine.settings.search_provider
     if not provider or not hasattr(engine.platform, 'search'):
         return {'error': 'websearch_unavailable'}
+    if hasattr(engine.platform, 'describe_search'):
+        try:
+            status = await engine.platform.describe_search(provider)
+            if not status.get('available', False):
+                return {'error': 'websearch_unavailable'}
+        except Exception:
+            return {'error': 'websearch_unavailable'}
     cache_key = 'web-call:' + call_key
     old = engine.store.get(cache_key)
     if old is not None:
@@ -154,17 +163,15 @@ async def run_turn(engine, scope, events, batch_id):
             engine.store.batch_done(batch_id, 'finished')
             return
         tools = TOOLS
-        available = False
-        if engine.settings.search_provider and hasattr(engine.platform, 'describe_search'):
-            try:
-                available = (await engine.platform.describe_search(engine.settings.search_provider)).get('available', False)
-            except Exception:
-                pass
-        if not available:
-            tools = [t for t in TOOLS if t['function']['name'] not in ('web_search', 'read_web')]
         if not journal.get('prefetched') and not journal.get('active'):
-            value = candidates(engine, scope, ' '.join(e.text for e in events), engine.settings.sticker_prefetch)
             st = engine.store.state(scope)
+            value = candidates(
+                engine,
+                scope,
+                ' '.join(e.text for e in events),
+                engine.settings.sticker_prefetch,
+                exclude_attachments_for=st.get('visible_stickers', []),
+            )
             attach(engine, scope, st, value['_attachments'])
             st['visible_stickers'] = sorted(set(st.get('visible_stickers', [])) | set(value['_sticker_ids']))
             journal['prefetched'] = True
@@ -181,7 +188,7 @@ async def run_turn(engine, scope, events, batch_id):
                     observe(engine, scope, updates)
                     journal['consumed'] = list(dict.fromkeys(journal['consumed'] + [e.message_id for e in updates]))
                     journal['watermark'] = max(e.seq for e in updates)
-                    await engine.prepare_context(scope, required_ids=journal['consumed'])
+                    await engine.prepare_context(scope, required_ids=journal['consumed'], include_tail=False)
                 state = engine.store.state(scope)
                 journal['visible'] = state['visible_sources']
                 model, context = state['model'], state['context']
@@ -286,7 +293,13 @@ async def run_turn(engine, scope, events, batch_id):
                         if active.get('reads', 0) >= engine.settings.max_read_calls:
                             raise ValueError('read_limit_exceeded')
                         active['reads'] = active.get('reads', 0) + 1
-                        value = candidates(engine, scope, args['query'], args.get('limit', 4))
+                        value = candidates(
+                            engine,
+                            scope,
+                            args['query'],
+                            args.get('limit', 4),
+                            exclude_attachments_for=journal.get('active', {}).get('sticker_ids', []),
+                        )
                     elif name == 'clarify_memories':
                         value = await engine.read_tool(scope, call, visible)
                     elif name == 'finish_turn':
