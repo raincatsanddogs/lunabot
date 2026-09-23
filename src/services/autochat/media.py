@@ -121,6 +121,16 @@ class MediaStore:
 
         if isinstance(source, bytes):
             data = source
+        elif isinstance(source, Path) or (isinstance(source, str) and not source.startswith(("data:", "http://", "https://"))):
+            file_path = str(source)
+            if file_path.startswith("file://"):
+                file_path = file_path[7:]
+                if file_path.startswith("/") and len(file_path) > 2 and file_path[2] == ":":
+                    file_path = file_path[1:]
+            p = Path(file_path)
+            if not p.is_file():
+                raise ValueError(f"Local image file not found: {source}")
+            data = p.read_bytes()
         elif source.startswith("data:"):
             encoded = source.split(",", 1)[1]
             if len(encoded) > self.settings.media_file_bytes * 4 / 3 + 4:
@@ -139,7 +149,7 @@ class MediaStore:
                         chunks.append(chunk)
             data = b"".join(chunks)
         else:
-            raise ValueError("Only platform HTTP URLs or inline images are accepted")
+            raise ValueError("Only platform HTTP URLs, inline images, or local files are accepted")
         if len(data) > self.settings.media_file_bytes:
             raise ValueError("Image too large")
         mime, preview = await asyncio.to_thread(image_preview, data)

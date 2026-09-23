@@ -248,25 +248,100 @@ async def handle_web_tool(cid, version, provider, method, arguments):
         return {'error': 'search_provider_unavailable'}
 
 
+async def _poll_sticker_operation(bot, is_group, target_id, oid):
+    for _ in range(120):
+        await asyncio.sleep(5)
+        try:
+            curr_session = _sessions.get(_engine_id)
+            if not curr_session:
+                continue
+            status = await curr_session.send_request(
+                'manage_stickers',
+                [_rpc_token, PROTOCOL_VERSION, {
+                    'admin': True,
+                    'command': {'op': 'operation', 'id': oid},
+                    'bot_id': str(bot.self_id),
+                    'group_id': str(target_id) if is_group else 'pm',
+                }]
+            )
+            if status.get('state') in ('finished', 'interrupted'):
+                msg = format_sticker_result(status)
+                if is_group:
+                    await bot.send_group_msg(group_id=int(target_id), message=msg)
+                else:
+                    await bot.send_private_msg(user_id=int(target_id), message=msg)
+                break
+        except Exception:
+            continue
+
+
 async def handle_sticker_command(ctx):
-    if not is_group_msg(ctx.event):
-        return await ctx.asend_reply_msg('请在需要管理表情包的群内使用此指令')
+    is_group = is_group_msg(ctx.event)
+    is_super = check_superuser(ctx.event)
+    if not is_group and not is_super:
+        return await ctx.asend_reply_msg('私聊仅限超级管理员管理表情包')
     try:
-        if not await memory_permission(ctx):
-            raise PermissionError('此操作需要本群群主、管理员或超级管理权限')
         command = parse_sticker_command(ctx.get_args().strip())
+        is_write = command['op'] in ('add', 'import', 'edit', 'delete')
+        if is_write:
+            if not is_super:
+                raise PermissionError('表情包录入与修改操作仅限超级管理员（🛠️）')
+        else:
+            if is_group and not await memory_permission(ctx):
+                raise PermissionError('查询表情包需要本群群主、管理员或超级管理权限')
+
         session = _sessions.get(_engine_id)
         if session is None:
             return await ctx.asend_reply_msg('autochat 会话服务离线，表情包操作未提交')
+
         images = []
         if command['op'] == 'add':
             for segment in get_msg(ctx.event):
                 if segment['type'] == 'image' and segment['data'].get('url'):
                     images.append(segment['data']['url'])
-        payload = {'bot_id': str(ctx.bot.self_id), 'group_id': str(ctx.group_id),
-                   'actor_id': str(ctx.user_id), 'message_id': str(ctx.message_id),
-                   'admin': True, 'command': command, 'images': images}
+            if not images:
+                raise ValueError('add 请直接在消息中附带 1 至 4 张图片')
+        elif command['op'] == 'import':
+            from ..gallery import GalleryManager
+            mgr = GalleryManager.get()
+            gall = mgr.find_gall(command['gallery'])
+            if gall is None:
+                return await ctx.asend_reply_msg(f"未找到画廊 \"{command['gallery']}\"")
+            pics = list(gall.pics)
+            pid_range = command.get('pid_range')
+            if pid_range:
+                if '-' in pid_range:
+                    parts = pid_range.split('-', 1)
+                    try:
+                        start_pid, end_pid = int(parts[0]), int(parts[1])
+                        pics = [p for p in pics if start_pid <= p.pid <= end_pid]
+                    except ValueError:
+                        raise ValueError('PID 区间格式无效，应如：1-20')
+                else:
+                    try:
+                        target_pid = int(pid_range)
+                        pics = [p for p in pics if p.pid == target_pid]
+                    except ValueError:
+                        raise ValueError('PID 格式无效，应为数字')
+            valid_pics = [p for p in pics if os.path.isfile(p.path)]
+            if not valid_pics:
+                return await ctx.asend_reply_msg('未找到该画廊中符合条件的本地图片')
+            images = [p.path for p in valid_pics[:50]]
+
+        group_id = str(ctx.group_id) if is_group else 'pm'
+        payload = {
+            'bot_id': str(ctx.bot.self_id),
+            'group_id': group_id,
+            'actor_id': str(ctx.user_id),
+            'message_id': str(ctx.message_id),
+            'admin': True,
+            'command': command,
+            'images': images,
+        }
         result = await asyncio.wait_for(session.send_request('manage_stickers', [_rpc_token, PROTOCOL_VERSION, payload]), 10)
+        if result.get('state') == 'pending' and result.get('operation_id'):
+            target_id = ctx.group_id if is_group else ctx.user_id
+            asyncio.create_task(_poll_sticker_operation(ctx.bot, is_group, target_id, result['operation_id']))
         return await ctx.asend_fold_msg_adaptive(format_sticker_result(result))
     except (asyncio.TimeoutError, ConnectionError, OSError):
         return await ctx.asend_reply_msg('表情包操作结果待确认，请重发同一请求或查询素材列表；不会重复保存同一图片')
