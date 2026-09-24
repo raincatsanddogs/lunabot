@@ -235,7 +235,102 @@ def normalize_gemini(raw: dict) -> ModelTurn:
 
 
 def openai_messages(messages: list[dict]) -> list[dict]:
-    return [{k: copy.deepcopy(v) for k, v in m.items() if k != "provider_state"} for m in messages]
+    """清洗并规范化 OpenAI 兼容接口的上下文消息列表：
+    1. 剔除无效空字段（如 refusal, audio, annotations 等为 None 的属性）与内部状态（provider_state）。
+    2. 确保 assistant.tool_calls 与 tool 响应严格配对且紧跟其后。
+    3. 合并或规整连续的同角色消息，防止角色交替错位触发上游 Google/New-API 400 错误。
+    """
+    if not messages:
+        return []
+
+    cleaned = []
+    allowed_keys = {
+        'role',
+        'content',
+        'name',
+        'tool_calls',
+        'tool_call_id',
+        'reasoning_content',
+    }
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        item = {}
+        for k, v in m.items():
+            if k not in allowed_keys:
+                continue
+            if v is None and k in ('refusal', 'audio', 'annotations', 'function_call'):
+                continue
+            item[k] = copy.deepcopy(v)
+        if 'role' in item:
+            cleaned.append(item)
+
+    result = []
+    for msg in cleaned:
+        role = msg['role']
+        if role == 'tool':
+            call_id = msg.get('tool_call_id')
+            if not call_id:
+                continue
+            prev_assistant = next(
+                (m for m in reversed(result) if m.get('role') == 'assistant'), None
+            )
+            if not prev_assistant or not any(
+                c.get('id') == call_id for c in prev_assistant.get('tool_calls', [])
+            ):
+                continue
+            result.append(msg)
+        elif role == 'assistant':
+            if result and result[-1].get('role') == 'assistant':
+                prev = result[-1]
+                if msg.get('tool_calls') and not prev.get('tool_calls'):
+                    result[-1] = msg
+                elif not msg.get('tool_calls') and prev.get('tool_calls'):
+                    pass
+                elif msg.get('tool_calls') and prev.get('tool_calls'):
+                    if prev.get('tool_calls') == msg.get('tool_calls'):
+                        pass
+                    else:
+                        result.append(msg)
+                else:
+                    c1 = prev.get('content') or ''
+                    c2 = msg.get('content') or ''
+                    prev['content'] = f'{c1}\n{c2}'.strip()
+            else:
+                result.append(msg)
+        elif role == 'user':
+            result.append(msg)
+        else:
+            result.append(msg)
+
+    final_messages = []
+    i = 0
+    while i < len(result):
+        curr = result[i]
+        final_messages.append(curr)
+        if curr.get('role') == 'assistant' and curr.get('tool_calls'):
+            expected_ids = [c['id'] for c in curr['tool_calls'] if c.get('id')]
+            tool_msgs = []
+            j = i + 1
+            while j < len(result) and result[j].get('role') == 'tool':
+                tool_msgs.append(result[j])
+                j += 1
+            received_ids = {m.get('tool_call_id') for m in tool_msgs}
+            for tid in expected_ids:
+                if tid not in received_ids:
+                    tool_msgs.append(
+                        {
+                            'role': 'tool',
+                            'tool_call_id': tid,
+                            'content': '{"error": "tool_execution_skipped"}',
+                        }
+                    )
+            final_messages.extend(tool_msgs)
+            i = j
+            continue
+        i += 1
+
+    return final_messages
 
 
 def validate_embeddings(vectors, count, dimension=None):
