@@ -769,12 +769,17 @@ class Engine(SendActions):
         newer = self.store.events(
             scope, after=watermark, now=self.clock.now(), pending=True, limit=1000
         )
+        negations = ('别发', '闭嘴', '等等', '取消', '错了', '停', '别说了', '不要')
         return [
             e
             for e in newer
             if e.speaker_id != scope.bot_id
             and not e.text.strip().startswith('/')
-            and (e.speaker_id in set(authors) | focus or self.direct(e))
+            and (
+                e.speaker_id in set(authors) | focus
+                or self.direct(e)
+                or any(w in e.text for w in negations)
+            )
         ]
 
     def tool_result(self, scope, call, value):
