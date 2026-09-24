@@ -72,10 +72,8 @@ async def web_call(engine, scope, batch_id, call_key, name, args, visible):
     if old is not None:
         return old
     if name == 'read_web':
-        urls = set(engine.store.state(scope).get('web_urls', []))
-        for event in engine.store.events(scope, ids=list(visible), now=engine.clock.now(), limit=100000):
-            urls.update(url.rstrip('.,;!?，。！？；') for url in re.findall(r'https?://[^\s<>"\[\]()]+', event.text))
-        if args['url'] not in urls or not public_url(args['url']):
+        target_url = args.get('url', '').strip()
+        if not public_url(target_url):
             return {'error': 'URL was not visible or is not public'}
     budget_key = 'web-budget:' + batch_id
     budget = engine.store.get(budget_key, {})
@@ -280,9 +278,11 @@ async def run_turn(engine, scope, events, batch_id):
                     if name == 'send_message':
                         if journal.get('completed'):
                             raise ValueError('Memory review only; sending already finished')
-                        for part in args['segments']:
-                            if part['type'] == 'sticker' and part['sticker_id'] not in active.get('sticker_ids', []):
+                        for part in args.get('segments', []):
+                            if part.get('type') == 'sticker' and part.get('sticker_id') not in active.get('sticker_ids', []):
                                 raise ValueError('Sticker was not visible to this model response')
+                        if args.get('sticker_id') and args.get('sticker_id') not in active.get('sticker_ids', []):
+                            raise ValueError('Sticker was not visible to this model response')
                         value = await engine.send_message(scope, batch_id, action_id,
                                                           args, set(active['visible']), journal['watermark'], authors)
                         if value.get('result', {}).get('reason') == 'disabled_or_new_messages':
@@ -305,6 +305,8 @@ async def run_turn(engine, scope, events, batch_id):
                     elif name == 'finish_turn':
                         if invalid_finish:
                             raise ValueError('Exactly one finish_turn is allowed and must be last')
+                        if active.get('failed_sends'):
+                            raise ValueError('前置 send_message 调用失败，请修正后重新发送')
                         if journal.get('completed'):
                             value = {'messages': [], 'memories': await engine.propose_memories(scope, args['memory_proposals'], visible)}
                             active['finished'] = True
@@ -319,6 +321,8 @@ async def run_turn(engine, scope, events, batch_id):
                         value = {'error': 'unknown_tool'}
                 except Exception as exc:
                     value = {'error': str(exc)[:500]}
+                    if name == 'send_message':
+                        active['failed_sends'] = True
                 journal['visible'] = sorted(visible)
                 record_result(engine, scope, batch_id, journal, call, value)
             state = engine.store.state(scope)

@@ -22,9 +22,19 @@ class SendActions:
         ]
 
     def prepare_send(self, scope, message, visible):
-        if 'segments' not in message:
-            message = {**message, 'segments': [{'type': 'text', 'text': message.get('text', '')}]}
+        if not message.get('segments'):
+            segments = []
+            if message.get('text'):
+                segments.append({'type': 'text', 'text': message['text']})
+            if message.get('sticker_id'):
+                segments.append({'type': 'sticker', 'sticker_id': message['sticker_id']})
+            message['segments'] = segments or [{'type': 'text', 'text': message.get('text', '')}]
             message.pop('text', None)
+            message.pop('sticker_id', None)
+        else:
+            for part in message['segments']:
+                if part.get('type') == 'text' and not part.get('text') and message.get('text'):
+                    part['text'] = message['text']
         validate(message, SEND)
         events = self.store.events(scope, ids=list(visible), now=self.clock.now(), limit=100000)
         users = {e.speaker_id for e in events}
@@ -32,7 +42,7 @@ class SendActions:
             raise ValueError('Unknown reply target')
         if message.get('reply_to_message_id') and message['reply_to_message_id'] not in visible:
             raise ValueError('Unknown quoted message')
-        text = ''.join(p['text'] for p in message['segments'] if p['type'] == 'text')
+        text = ''.join(p.get('text', '') for p in message['segments'] if p['type'] == 'text')
         if len(text) > self.settings.reply_max_length:
             raise ValueError('Invalid reply length')
         segments = []
@@ -40,12 +50,16 @@ class SendActions:
             segments.append({'type': 'reply', 'data': {'id': message['reply_to_message_id']}})
         segments.extend({'type': 'at', 'data': {'qq': uid}} for uid in message.get('at_user_ids', []))
         shown = set(self.store.state(scope).get('visible_stickers', []))
-        for part in message['segments']:
-            if part['type'] == 'text':
-                if part['text'].strip():
-                    segments.append({'type': 'text', 'data': {'text': part['text']}})
-            else:
-                sid = part['sticker_id']
+        for i, part in enumerate(message['segments']):
+            if part.get('type') == 'text':
+                content = (part.get('text') or '').strip()
+                if not content:
+                    raise ValueError(f"segments[{i}] 的 type 为 'text' 时，'text' 属性不能为空且必须包含发言内容")
+                segments.append({'type': 'text', 'data': {'text': content}})
+            elif part.get('type') == 'sticker':
+                sid = part.get('sticker_id')
+                if not sid:
+                    raise ValueError(f"segments[{i}] 的 type 为 'sticker' 时，必须包含 'sticker_id'")
                 if sid not in shown:
                     raise ValueError('Sticker was not presented in this conversation')
                 sticker = self.stickers.record(scope, sid, active=True)
@@ -53,8 +67,10 @@ class SendActions:
                     'asset_id': sticker['asset_id'], 'sticker_id': sid,
                     'description': sticker.get('description', ''), 'visible_text': sticker.get('text', ''),
                 }})
+            else:
+                raise ValueError(f"segments[{i}] 包含不支持的 type: {part.get('type')}")
         if not any(s['type'] in ('text', 'image') for s in segments):
-            raise ValueError('Invalid reply length')
+            raise ValueError('Message must contain non-empty text or sticker')
         return message, segments
 
     def note_sent(self, scope, action_id):

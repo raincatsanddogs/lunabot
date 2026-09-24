@@ -1,4 +1,6 @@
+import copy
 from ..record import before_record_hook
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from ..utils import *
 from ..utils.rpc import *
 from ..llm import ChatSession, get_text_embedding, describe_embedding_model
@@ -127,9 +129,11 @@ async def handle_describe_models(cid, version, names):
 
 @rpc_method(RPC_SERVICE, 'query_llm')
 async def handle_query_llm(cid, request):
+    import copy
+
     check_protocol(request['protocol_version'])
     session = ChatSession()
-    session.content = request['messages']
+    session.content = copy.deepcopy(request['messages'])
     session.has_image = any(
         isinstance(m.get('content'), list)
         and any(p.get('type') == 'image_url' for p in m['content'])
@@ -216,7 +220,10 @@ async def handle_send_action(cid, version, consumer_id, bot_id, group_id, action
         store.finish_action(key, 'sent', response)
         return {'state': 'sent', **response}
     except Exception:
-        logger.print_exc(f'发送 autochat 动作 {action_id} 失败')
+        if hasattr(logger, 'print_exc'):
+            logger.print_exc(f'发送 autochat 动作 {action_id} 失败')
+        else:
+            logger.error(f'发送 autochat 动作 {action_id} 失败')
         store.finish_action(key, 'unknown', {})
         return {'state': 'unknown'}
 
