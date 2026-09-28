@@ -6,6 +6,24 @@ import html
 import re
 
 
+def adapt_markdown_prefix(text: str, target_prefix: str) -> str:
+    """
+    将 Markdown 文本中的标准 / 前缀指令安全地替换为目标前缀（如 # 或 ! 或空字符串）。
+    严格避免误伤：
+    - URL (http:// 或 https://)
+    - 相对/绝对文件路径 (./ 或 ../)
+    - 正文并列短语 (如 开启/关闭)
+    - 数学除法 (如 1/2)
+    """
+    if target_prefix == "/":
+        return text
+    pattern = r'(?<=[\s`\(\)（）\"\'“”‘’:：])/(?=[a-zA-Z0-9_\u4e00-\u9fa5\[<{【])'
+    line_start_pattern = r'(?<=^)/(?=[a-zA-Z0-9_\u4e00-\u9fa5\[<{【])'
+    text = re.sub(line_start_pattern, target_prefix, text, flags=re.MULTILINE)
+    text = re.sub(pattern, target_prefix, text)
+    return text
+
+
 @dataclass(frozen=True)
 class HelpEntry:
     title: str
@@ -21,10 +39,21 @@ class HelpEntry:
     def primary(self) -> str:
         return self.commands[0] if self.commands else self.title
 
-    def detail_markdown(self, service: str) -> str:
+    def primary_with_prefix(self, prefix: str = "/") -> str:
+        cmd = self.primary
+        if prefix != "/" and cmd.startswith("/"):
+            return prefix + cmd[1:]
+        return cmd
+
+    def detail_markdown(self, service: str, prefix: str = "/") -> str:
         context = f"## {self.category}\n\n{self.preamble}\n\n" if self.preamble else ""
-        usage = f"图片操作需配合 `/img` 使用，指令格式：`/img {self.operation} 参数`（参数见下文）。\n\n" if self.operation else ""
-        return context + usage + self.content + f"\n\n> 发送 `/help {service}` 返回指令索引。"
+        img_cmd = f"{prefix}img" if prefix != "/" else "/img"
+        usage = f"图片操作需配合 `{img_cmd}` 使用，指令格式：`{img_cmd} {self.operation} 参数`（参数见下文）。\n\n" if self.operation else ""
+        help_cmd = f"{prefix}help" if prefix != "/" else "/help"
+        footer = f"\n\n> 发送 `{help_cmd} {service}` 返回指令索引。"
+        content = adapt_markdown_prefix(self.content, prefix) if prefix != "/" else self.content
+        context = adapt_markdown_prefix(context, prefix) if prefix != "/" else context
+        return context + usage + content + footer
 
 
 @dataclass(frozen=True)
@@ -34,20 +63,25 @@ class HelpDocument:
     digest: str
     entries: tuple[HelpEntry, ...]
 
-    def find(self, query: str) -> list[HelpEntry]:
-        target = normalize_query(query)
+    def find(self, query: str, prefix: str | None = None) -> list[HelpEntry]:
+        target = normalize_query(query, prefix=prefix)
         matches = []
         for entry in self.entries:
             names = [entry.title, *entry.commands]
             if entry.operation:
                 names.extend((entry.operation, re.sub(r"[（(][^()（）]+[)）]$", "", entry.title)))
-            if target in {normalize_query(name) for name in names}:
+            if target in {normalize_query(name, prefix=prefix) for name in names}:
                 matches.append(entry)
         return matches
 
 
-def normalize_query(query: str) -> str:
-    return " ".join(query.strip().removeprefix("/").split()).casefold()
+def normalize_query(query: str, prefix: str | None = None) -> str:
+    s = query.strip()
+    if prefix and s.startswith(prefix):
+        s = s[len(prefix):]
+    elif s.startswith("/"):
+        s = s[1:]
+    return " ".join(s.split()).casefold()
 
 
 def plain_inline(text: str) -> str:

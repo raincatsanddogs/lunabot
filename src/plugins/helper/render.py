@@ -12,7 +12,7 @@ from .docs import HelpDocument, HelpEntry
 
 
 # 修改 HTML 模板或解析规则时更新，保证旧布局不被复用。
-RENDER_VERSION = "2"
+RENDER_VERSION = "3"
 STYLE = """
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #fff; }
@@ -97,49 +97,52 @@ def _header(doc: HelpDocument, number: int, total: int) -> str:
             f'<div class="meta">第 {number} / {total} 页 · 共 {len(doc.entries)} 项</div>{legend}</header>')
 
 
-def _footer(doc: HelpDocument, number: int, total: int, measuring: bool = False) -> str:
+def _footer(doc: HelpDocument, number: int, total: int, measuring: bool = False, prefix: str = "/") -> str:
     name = escape(doc.name)
-    query = escape(doc.entries[0].primary.removeprefix("/")) if doc.entries else "指令名"
-    previous = f'上一页：<code>/help {name} {number if measuring else number - 1}</code>' if number > 1 or measuring else "已是首页"
-    following = f'下一页：<code>/help {name} {number if measuring else number + 1}</code>' if number < total or measuring else "已是末页"
+    query = escape(doc.entries[0].primary_with_prefix(prefix).removeprefix(prefix)) if doc.entries else "指令名"
+    help_cmd = f"{prefix}help" if prefix != "/" else "/help"
+    previous = f'上一页：<code>{help_cmd} {name} {number if measuring else number - 1}</code>' if number > 1 or measuring else "已是首页"
+    following = f'下一页：<code>{help_cmd} {name} {number if measuring else number + 1}</code>' if number < total or measuring else "已是末页"
     return (f'<footer><div class="navigation"><span>{previous}</span><span>{following}</span></div>'
-            f'<div>详情：<code>/help {name} {query}</code></div>'
+            f'<div>详情：<code>{help_cmd} {name} {query}</code></div>'
             '<div>也可在指令后加 <code>help</code> 查看详细用法。</div></footer>')
 
 
-def _entry_html(entry: HelpEntry) -> str:
+def _entry_html(entry: HelpEntry, prefix: str = "/") -> str:
     marker = " ".join(entry.permissions)
-    command = escape(f"{marker} {entry.primary}".strip())
+    cmd = entry.primary_with_prefix(prefix)
+    command = escape(f"{marker} {cmd}".strip())
     return f'<article class="entry"><div class="command">{command}</div><div class="summary">{escape(entry.summary)}</div></article>'
 
 
-def build_index_html(doc: HelpDocument, entries: tuple[HelpEntry, ...], number: int, total: int, options: IndexOptions, measuring: bool = False) -> str:
+def build_index_html(doc: HelpDocument, entries: tuple[HelpEntry, ...], number: int, total: int, options: IndexOptions, measuring: bool = False, prefix: str = "/") -> str:
     rows = []
     previous_category = None
     for entry in entries:
         if entry.category and entry.category != previous_category:
             rows.append(f'<div class="category">{escape(entry.category)}</div>')
-        rows.append(_entry_html(entry))
+        rows.append(_entry_html(entry, prefix=prefix))
         previous_category = entry.category
-    return _html(_header(doc, number, total) + "".join(rows) + _footer(doc, number, total, measuring), options)
+    return _html(_header(doc, number, total) + "".join(rows) + _footer(doc, number, total, measuring, prefix=prefix), options)
 
 
-def page_text(doc: HelpDocument, page: IndexPage) -> str:
+def page_text(doc: HelpDocument, page: IndexPage, prefix: str = "/") -> str:
     lines = [f"{doc.title} — 指令索引", f"第 {page.number}/{page.total} 页，共 {len(doc.entries)} 项"]
     previous_category = None
     for entry in page.entries:
         if entry.category and entry.category != previous_category:
             lines.append(f"\n【{entry.category}】")
-        lines.append(f"{' '.join(entry.permissions)} {entry.primary} — {entry.summary}".strip())
+        lines.append(f"{' '.join(entry.permissions)} {entry.primary_with_prefix(prefix)} — {entry.summary}".strip())
         previous_category = entry.category
     if any(entry.permissions for entry in page.entries):
         lines.append("🛠️ 超级管理指令；🔧 含群管理操作，权限见详情")
+    help_cmd = f"{prefix}help" if prefix != "/" else "/help"
     if page.number > 1:
-        lines.append(f"上一页：/help {doc.name} {page.number - 1}")
+        lines.append(f"上一页：{help_cmd} {doc.name} {page.number - 1}")
     if page.number < page.total:
-        lines.append(f"下一页：/help {doc.name} {page.number + 1}")
-    query = page.entries[0].primary.removeprefix("/") if page.entries else "指令名"
-    lines.append(f"详情：/help {doc.name} {query}，或在指令后加 help")
+        lines.append(f"下一页：{help_cmd} {doc.name} {page.number + 1}")
+    query = page.entries[0].primary_with_prefix(prefix).removeprefix(prefix) if page.entries else "指令名"
+    lines.append(f"详情：{help_cmd} {doc.name} {query}，或在指令后加 help")
     return "\n".join(lines)
 
 
@@ -179,8 +182,8 @@ class HelpRenderer:
         self.page_factory = page_factory
         self.log_error = log_error or (lambda message: None)
 
-    def _directory(self, doc: HelpDocument, options: IndexOptions) -> Path:
-        fingerprint = json.dumps([RENDER_VERSION, STYLE, doc.name, doc.digest, asdict(options)], ensure_ascii=False, sort_keys=True)
+    def _directory(self, doc: HelpDocument, options: IndexOptions, prefix: str = "/") -> Path:
+        fingerprint = json.dumps([RENDER_VERSION, STYLE, doc.name, doc.digest, asdict(options), prefix], ensure_ascii=False, sort_keys=True)
         return self.cache_dir / sha256(fingerprint.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -190,8 +193,8 @@ class HelpRenderer:
         start = sum(counts[:number - 1])
         return IndexPage(number, len(counts), doc.entries[start:start + counts[number - 1]], path)
 
-    async def get_index(self, doc: HelpDocument, number: int, options: IndexOptions) -> IndexPage:
-        directory = self._directory(doc, options)
+    async def get_index(self, doc: HelpDocument, number: int, options: IndexOptions, prefix: str = "/") -> IndexPage:
+        directory = self._directory(doc, options, prefix=prefix)
         layout_path = directory / "pages.json"
         image_path = directory / f"index-{number}.png"
         counts = None
@@ -210,7 +213,7 @@ class HelpRenderer:
                 await page.set_viewport_size({"width": options.width, "height": 1})
                 if counts is None:
                     # 仅排版简短索引以测量高度，不加载完整文档，也不截图其他页。
-                    await page.set_content(build_index_html(doc, doc.entries, len(doc.entries), len(doc.entries), options, measuring=True))
+                    await page.set_content(build_index_html(doc, doc.entries, len(doc.entries), len(doc.entries), options, measuring=True, prefix=prefix))
                     await page.evaluate("document.fonts.ready")
                     metrics = await page.evaluate("""() => {
                         const height = node => {
@@ -227,7 +230,7 @@ class HelpRenderer:
                     counts = paginate(doc, options, metrics["rows"], metrics["categories"], metrics["overhead"])
                     _atomic_write(layout_path, json.dumps(counts).encode("utf-8"))
                 result = self._select(doc, counts, number)
-                await page.set_content(build_index_html(doc, result.entries, number, result.total, options))
+                await page.set_content(build_index_html(doc, result.entries, number, result.total, options, prefix=prefix))
                 await page.evaluate("document.fonts.ready")
                 bounds = await page.locator("#help-sheet").bounding_box()
                 if math.ceil(bounds["height"]) > options.max_height:
@@ -243,12 +246,12 @@ class HelpRenderer:
                 counts = [min(options.page_size, len(doc.entries) - i) for i in range(0, len(doc.entries), options.page_size)]
             return self._select(doc, counts, number)
 
-    async def get_detail(self, doc: HelpDocument, entry: HelpEntry, options: IndexOptions) -> Path:
+    async def get_detail(self, doc: HelpDocument, entry: HelpEntry, options: IndexOptions, prefix: str = "/") -> Path:
         import mistune
 
-        markdown = entry.detail_markdown(doc.name)
+        markdown = entry.detail_markdown(doc.name, prefix=prefix)
         digest = sha256(markdown.encode("utf-8")).hexdigest()
-        path = self._directory(doc, options) / f"detail-{digest}.png"
+        path = self._directory(doc, options, prefix=prefix) / f"detail-{digest}.png"
         if path.is_file():
             return path
         body = mistune.create_markdown(escape=True)(markdown)

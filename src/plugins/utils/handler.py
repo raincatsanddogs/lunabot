@@ -2304,11 +2304,14 @@ class CmdHandler:
 
     @classmethod
     async def get_cmd_help_doc_img(cls, part: HelpDocCmdPart, width=600) -> Image.Image:
-        md5 = get_md5(part.content)
+        prefix = get_command_prefix()
+        from ..helper.docs import adapt_markdown_prefix
+        content = adapt_markdown_prefix(part.content, prefix) if prefix != '/' else part.content
+        md5 = get_md5(f"{content}_{prefix}")
         cache_path = create_parent_folder(os.path.join(cls.HELP_PART_IMG_CACHE_DIR, f"{md5}.png"))
         if os.path.exists(cache_path):
             return open_image(cache_path)
-        img = await markdown_to_image(part.content, width=width)
+        img = await markdown_to_image(content, width=width)
         img.save(cache_path)
         return img
  
@@ -2434,7 +2437,8 @@ class CmdHandler:
                                     if part:
                                         img = await self.get_cmd_help_doc_img(part)
                                         return await context.asend_reply_msg(await get_image_cq(img, low_quality=True))
-                                raise ReplyException(f"没有找到该指令的帮助\n发送\"/help\"查看完整帮助")
+                                pfx = get_command_prefix()
+                                raise ReplyException(f"没有找到该指令的帮助\n发送\"{pfx}help\"查看完整帮助")
 
                     # 执行函数
                     return await handler_func(context)
