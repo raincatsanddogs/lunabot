@@ -2160,7 +2160,7 @@ async def compose_best30_image(ctx: SekaiHandlerContext, qid: int) -> Image.Imag
 pjsk_alias_set = SekaiCmdHandler([
     "/pjsk alias add", "/pjskalias add",
     "/添加歌曲别名", "/歌曲别名添加", 
-])
+], disabled=True)
 pjsk_alias_set.check_cdrate(cd).check_wblist(gbl)
 @pjsk_alias_set.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2208,7 +2208,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_alias = SekaiCmdHandler([
     "/pjsk alias", "/music alias", 
     "/歌曲别名", "/查歌曲别名",
-])
+], disabled=True)
 pjsk_alias.check_cdrate(cd).check_wblist(gbl)
 @pjsk_alias.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2233,7 +2233,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_alias_del = SekaiCmdHandler([
     "/pjsk alias del", "/pjskalias del",
     "/删除歌曲别名", "/歌曲别名删除",
-])
+], disabled=True)
 pjsk_alias_del.check_cdrate(cd).check_wblist(gbl)
 @pjsk_alias_del.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2277,7 +2277,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_song = SekaiCmdHandler([
     "/pjsk song", "/pjsk music", "/song", "/music",
     "/查曲", "/查歌", "/歌曲", "/查歌曲",
-])
+], disabled=True)
 pjsk_song.check_cdrate(cd).check_wblist(gbl)
 @pjsk_song.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2321,7 +2321,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_note_num = SekaiCmdHandler([
     "/pjsk note num", "/pjsk note count",
     "/物量", "/查物量",
-])
+], disabled=True)
 pjsk_note_num.check_cdrate(cd).check_wblist(gbl)
 @pjsk_note_num.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2345,7 +2345,7 @@ async def _(ctx: SekaiHandlerContext):
 # 歌曲列表
 MUSIC_LIST_CMDS = ["/pjsk song list", "/pjsk music list", "/歌曲列表", "/歌曲一览",]
 MUSIC_CONSTANT_CMDS = ["/pjsk music constant", "/难度排行", "/定数表", '/歌曲定数',]
-pjsk_music_list = SekaiCmdHandler(MUSIC_LIST_CMDS + MUSIC_CONSTANT_CMDS)
+pjsk_music_list = SekaiCmdHandler(MUSIC_LIST_CMDS + MUSIC_CONSTANT_CMDS, disabled=True)
 pjsk_music_list.check_cdrate(cd).check_wblist(gbl)
 @pjsk_music_list.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2458,7 +2458,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_play_progress = SekaiCmdHandler([
     "/pjsk progress",
     "/pjsk进度", "/打歌进度", "/歌曲进度", "/打歌信息",
-])
+], disabled=True)
 pjsk_play_progress.check_cdrate(cd).check_wblist(gbl)
 @pjsk_play_progress.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2474,7 +2474,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_sync_music_alias = CmdHandler([
     "/sync music alias", "/sma",
     "/同步歌曲别名", 
-], logger)
+], logger, disabled=True)
 pjsk_sync_music_alias.check_cdrate(cd).check_wblist(gbl).check_superuser()
 @pjsk_sync_music_alias.handle()
 async def _(ctx: HandlerContext):
@@ -2488,7 +2488,7 @@ async def _(ctx: HandlerContext):
 pjsk_music_rewards = SekaiCmdHandler([
     "/pjsk music rewards",
     "/歌曲奖励", "/打歌奖励", "/歌曲挖矿", "/打歌挖矿",
-])  
+], disabled=True)  
 pjsk_music_rewards.check_cdrate(cd).check_wblist(gbl)
 @pjsk_music_rewards.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2501,7 +2501,7 @@ async def _(ctx: SekaiHandlerContext):
 # bpm查询
 pjsk_bpm = SekaiCmdHandler([
     "/pjsk bpm", "/查bpm", "/查BPM",
-])
+], disabled=True)
 pjsk_bpm.check_cdrate(cd).check_wblist(gbl)
 @pjsk_bpm.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2533,7 +2533,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_music_cover = SekaiCmdHandler([
     "/pjsk music cover",
     "/查曲绘", "/曲绘",
-])
+], disabled=True)
 pjsk_music_cover.check_cdrate(cd).check_wblist(gbl)
 @pjsk_music_cover.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2550,7 +2550,7 @@ async def _(ctx: SekaiHandlerContext):
 # 查角色anvo持有情况，需要userMusicVocals字段
 pjsk_anvo = SekaiCmdHandler([
     "/anvo", "/pjsk anvo",
-])
+], disabled=True)
 pjsk_anvo.check_cdrate(cd).check_wblist(gbl)
 @pjsk_anvo.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2582,7 +2582,7 @@ async def _(ctx: SekaiHandlerContext):
 # best30
 pjsk_best30 = SekaiCmdHandler([
     "/pjsk b30", "/b30", "/pjsk rating",
-])
+], disabled=True)
 pjsk_best30.check_cdrate(cd).check_wblist(gbl)
 @pjsk_best30.handle()
 async def _(ctx: SekaiHandlerContext):

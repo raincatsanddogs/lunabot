@@ -887,7 +887,7 @@ async def compose_gacha_record_image(ctx: SekaiHandlerContext, qid: int, spec_gi
 # 查卡池
 pjsk_gacha = SekaiCmdHandler([
     "/pjsk gacha", "/卡池列表", "/卡池一览", "/卡池", "/查卡池", 
-])
+], disabled=True)
 pjsk_gacha.check_cdrate(cd).check_wblist(gbl)
 @pjsk_gacha.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -918,7 +918,7 @@ async def _(ctx: SekaiHandlerContext):
 # 抽卡记录
 pjsk_gacha_record = SekaiCmdHandler([
     "/pjsk gacha record", "/抽卡记录", "/抽卡历史",
-])
+], disabled=True)
 pjsk_gacha_record.check_cdrate(cd).check_wblist(gbl)
 @pjsk_gacha_record.handle()
 async def _(ctx: SekaiHandlerContext):

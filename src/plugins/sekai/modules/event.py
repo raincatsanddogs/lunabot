@@ -1035,7 +1035,7 @@ async def compose_event_record_image(ctx: SekaiHandlerContext, qid: int) -> Imag
 # 查活动（单个/多个）
 MULTI_EVENT_CMDS = ["/pjsk events", "/pjsk_events", "/events", "/活动列表", "/活动一览",]
 SINGLE_EVENT_CMDS = ["/pjsk event", "/pjsk_event", "/event", "/活动", "/查活动",]
-pjsk_event = SekaiCmdHandler(SINGLE_EVENT_CMDS + MULTI_EVENT_CMDS)
+pjsk_event = SekaiCmdHandler(SINGLE_EVENT_CMDS + MULTI_EVENT_CMDS, disabled=True)
 pjsk_event.check_cdrate(cd).check_wblist(gbl)
 @pjsk_event.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1142,7 +1142,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_send_boost = SekaiCmdHandler([
     "/pjsk send boost", "/pjsk_send_boost", "/pjsk grant boost", "/pjsk_grant_boost",
     "/自动送火", "/送火",
-], regions=['jp'])
+], regions=['jp'], disabled=True)
 pjsk_send_boost.check_cdrate(cd).check_wblist(gbl)
 @pjsk_send_boost.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1153,7 +1153,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_event_record = SekaiCmdHandler([
     "/pjsk event record", "/pjsk_event_record", 
     "/活动记录", "/冲榜记录",
-])
+], disabled=True)
 pjsk_event_record.check_cdrate(cd).check_wblist(gbl)
 @pjsk_event_record.handle()
 async def _(ctx: SekaiHandlerContext):

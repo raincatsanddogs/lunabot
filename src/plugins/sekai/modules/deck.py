@@ -2416,7 +2416,7 @@ pjsk_event_deck = SekaiCmdHandler([
     "/组卡", "/组队", "/配队", 
     "/指定属性组卡", "/指定属性组队", "/指定属性卡组", "/指定属性配队",
     "/模拟组卡", "/模拟配队", "/模拟组队", "/模拟卡组",
-])
+], disabled=True)
 pjsk_event_deck.check_cdrate(cd).check_wblist(gbl)
 @pjsk_event_deck.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2434,7 +2434,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_challenge_deck = SekaiCmdHandler([
     "/pjsk challenge card", "/pjsk challenge deck",
     "/挑战组卡", "/挑战组队", "/挑战卡组", "/挑战配队",
-])
+], disabled=True)
 pjsk_challenge_deck.check_cdrate(cd).check_wblist(gbl)
 @pjsk_challenge_deck.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2452,7 +2452,7 @@ pjsk_no_event_deck = SekaiCmdHandler([
     "/pjsk no event deck", "/pjsk best deck",
     "/长草组卡", "/长草组队", "/长草卡组", "/长草配队", 
     "/最强卡组", "/最强组卡", "/最强组队", "/最强配队",
-])
+], disabled=True)
 pjsk_no_event_deck.check_cdrate(cd).check_wblist(gbl)
 @pjsk_no_event_deck.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2470,7 +2470,7 @@ pjsk_bonus_deck = SekaiCmdHandler([
     "/pjsk bonus deck", "/pjsk bonus card",
     "/加成组卡", "/加成组队", "/加成卡组", "/加成配队",
     "/控分组卡", "/控分组队", "/控分卡组", "/控分配队",
-])
+], disabled=True)
 pjsk_bonus_deck.check_cdrate(cd).check_wblist(gbl)
 @pjsk_bonus_deck.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2486,7 +2486,7 @@ async def _(ctx: SekaiHandlerContext):
 # 实效计算
 pjsk_score_up = CmdHandler([
     "/实效", "/倍率", "/时效", "/pjsk score up",
-], logger)
+], logger, disabled=True)
 pjsk_score_up.check_cdrate(cd).check_wblist(gbl)
 @pjsk_score_up.handle()
 async def _(ctx: SekaiHandlerContext):

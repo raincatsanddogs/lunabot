@@ -144,7 +144,7 @@ pjsk_chart = SekaiCmdHandler([
     "/pjsk chart",
     "/谱面查询", "/铺面查询", "/谱面预览", "/铺面预览", "/谱面", "/铺面", "/查谱面", "/查铺面", "/查谱",
     "/技能预览", 
-])
+], disabled=True)
 pjsk_chart.check_cdrate(cd).check_wblist(gbl)
 @pjsk_chart.handle()
 async def _(ctx: SekaiHandlerContext):

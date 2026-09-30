@@ -67,7 +67,7 @@ async def _(ctx: SekaiHandlerContext):
 
 upload_help = SekaiCmdHandler([
     "/抓包帮助", "/抓包", "/pjsk upload help",
-])
+], disabled=True)
 upload_help.check_cdrate(cd).check_wblist(gbl)
 @upload_help.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -78,7 +78,7 @@ async def _(ctx: SekaiHandlerContext):
 card_extractor = CardExtractor()
 extract_card = SekaiCmdHandler([
     "/提取卡牌"
-], regions=['jp'])
+], regions=['jp'], disabled=True)
 extract_card.check_cdrate(cd).check_wblist(gbl)
 @extract_card.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -168,7 +168,7 @@ async def _(ctx: SekaiHandlerContext):
 
 chara_bd = SekaiCmdHandler([
     "/pjsk chara birthday", "/角色生日", "/生日",
-])
+], disabled=True)
 chara_bd.check_cdrate(cd).check_wblist(gbl)
 @chara_bd.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -305,7 +305,7 @@ async def _(ctx: SekaiHandlerContext):
             
 
 
-heyiwei = SekaiCmdHandler(["/pjsk detail", ])
+heyiwei = SekaiCmdHandler(["/pjsk detail", ], disabled=True)
 heyiwei.check_cdrate(cd).check_wblist(gbl)
 @heyiwei.handle()
 async def _(ctx: SekaiHandlerContext):

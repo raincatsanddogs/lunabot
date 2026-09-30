@@ -1738,7 +1738,7 @@ async def compose_character_rank_mission_overview_image(
 pjsk_bind = SekaiCmdHandler([
     "/pjsk bind", "/pjsk id",
     "/绑定", "/pjsk 绑定"
-], parse_uid_arg=False)
+], parse_uid_arg=False, disabled=True)
 pjsk_bind.check_cdrate(cd).check_wblist(gbl)
 @pjsk_bind.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1884,7 +1884,7 @@ async def _(ctx: SekaiHandlerContext):
 # 解绑id
 pjsk_unbind = SekaiCmdHandler([
     "/pjsk unbind", "/pjsk解绑", "/解绑",
-], parse_uid_arg=False)
+], parse_uid_arg=False, disabled=True)
 pjsk_unbind.check_cdrate(cd).check_wblist(gbl)
 @pjsk_unbind.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1906,7 +1906,7 @@ async def _(ctx: SekaiHandlerContext):
 # 设置主账号
 pjsk_set_main = SekaiCmdHandler([
     "/pjsk set main", "/pjsk主账号", "/设置主账号", "/主账号",
-], parse_uid_arg=False)
+], parse_uid_arg=False, disabled=True)
 pjsk_set_main.check_cdrate(cd).check_wblist(gbl)
 @pjsk_set_main.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1929,7 +1929,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_swap_bind = SekaiCmdHandler([
     "/pjsk swap bind", "/pjsk交换绑定", 
     "/交换绑定", "/绑定交换", "/交换账号", "/交换账号顺序",
-], parse_uid_arg=False)
+], parse_uid_arg=False, disabled=True)
 pjsk_swap_bind.check_cdrate(cd).check_wblist(gbl)
 @pjsk_swap_bind.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1952,7 +1952,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_hide_suite = SekaiCmdHandler([
     "/pjsk hide suite",
     "/pjsk隐藏抓包", "/隐藏抓包",
-])
+], disabled=True)
 pjsk_hide_suite.check_cdrate(cd).check_wblist(gbl)
 @pjsk_hide_suite.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1969,7 +1969,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_show_suite = SekaiCmdHandler([
     "/pjsk show suite",
     "/pjsk显示抓包", "/pjsk展示抓包", "/展示抓包",
-])
+], disabled=True)
 pjsk_show_suite.check_cdrate(cd).check_wblist(gbl)
 @pjsk_show_suite.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1986,7 +1986,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_hide_id = SekaiCmdHandler([
     "/pjsk hide id",
     "/pjsk隐藏id", "/pjsk隐藏ID", "/隐藏id", "/隐藏ID",
-])
+], disabled=True)
 pjsk_hide_id.check_cdrate(cd).check_wblist(gbl)
 @pjsk_hide_id.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2004,7 +2004,7 @@ pjsk_show_id = SekaiCmdHandler([
     "/pjsk show id",
     "/pjsk显示id", "/pjsk显示ID", "/pjsk展示id", "/pjsk展示ID",
     "/展示id", "/展示ID", "/显示id", "/显示ID",
-])
+], disabled=True)
 pjsk_show_id.check_cdrate(cd).check_wblist(gbl)
 @pjsk_show_id.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2020,7 +2020,7 @@ async def _(ctx: SekaiHandlerContext):
 # 查询单角色角色等级任务总览
 pjsk_character_rank_mission = SekaiCmdHandler([
     "/cr任务", "/角色等级任务",
-])
+], disabled=True)
 pjsk_character_rank_mission.check_cdrate(cd).check_wblist(gbl)
 @pjsk_character_rank_mission.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2126,7 +2126,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_info = SekaiCmdHandler([
     "/pjsk profile",
     "/个人信息", "/名片", "/pjsk 个人信息", "/pjsk 名片",
-])
+], disabled=True)
 pjsk_info.check_cdrate(cd).check_wblist(gbl)
 @pjsk_info.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2157,7 +2157,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_reg_time = SekaiCmdHandler([
     "/pjsk reg time",
     "/注册时间", "/pjsk 注册时间", "/查时间",
-])
+], disabled=True)
 pjsk_reg_time.check_cdrate(cd).check_wblist(gbl)
 @pjsk_reg_time.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2171,7 +2171,7 @@ async def _(ctx: SekaiHandlerContext):
 # 检查profile服务器状态
 pjsk_check_service = SekaiCmdHandler([
     "/pjsk check service", "/pcs", "/pjsk检查服务状态",
-])
+], disabled=True)
 pjsk_check_service.check_cdrate(cd).check_wblist(gbl)
 @pjsk_check_service.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2190,7 +2190,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_data_mode = SekaiCmdHandler([
     "/pjsk data mode", 
     "/pjsk抓包模式", "/pjsk抓包获取模式", "/抓包模式",
-])
+], disabled=True)
 pjsk_data_mode.check_cdrate(cd).check_wblist(gbl)
 @pjsk_data_mode.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2236,7 +2236,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_check_data = SekaiCmdHandler([
     "/pjsk check data",
     "/pjsk抓包", "/pjsk抓包状态", "/pjsk抓包数据", "/pjsk抓包查询", "/抓包数据", "/抓包状态", "/抓包信息",
-])
+], disabled=True)
 pjsk_check_data.check_cdrate(cd).check_wblist(gbl)
 @pjsk_check_data.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2317,7 +2317,7 @@ async def _(ctx: HandlerContext):
 # 验证用户游戏帐号
 verify_game_account = SekaiCmdHandler([
     "/pjsk verify", "/pjsk验证",
-])
+], disabled=True)
 verify_game_account.check_cdrate(cd).check_wblist(gbl).check_cdrate(verify_rate_limit)
 @verify_game_account.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2328,7 +2328,7 @@ async def _(ctx: SekaiHandlerContext):
 # 查询用户验证过的游戏ID列表
 get_verified_uids = SekaiCmdHandler([
     "/pjsk verify list", "/pjsk验证列表", "/pjsk验证状态", 
-])
+], disabled=True)
 get_verified_uids.check_cdrate(cd).check_wblist(gbl)
 @get_verified_uids.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2350,7 +2350,7 @@ async def _(ctx: SekaiHandlerContext):
 upload_profile_bg = SekaiCmdHandler([
     "/pjsk upload profile bg", "/pjsk upload profile background",
     "/上传个人信息背景", "/上传个人信息图片", "/上传个人背景", "/上传个人信息",
-])
+], disabled=True)
 upload_profile_bg.check_cdrate(cd).check_wblist(gbl).check_cdrate(profile_bg_upload_rate_limit)
 @upload_profile_bg.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2395,7 +2395,7 @@ async def _(ctx: SekaiHandlerContext):
 clear_profile_bg = SekaiCmdHandler([
     "/pjsk clear profile bg", "/pjsk clear profile background",
     "/清空个人信息背景", "/清除个人信息背景",  "/清空个人信息图片", "/清除个人信息图片", 
-])
+], disabled=True)
 clear_profile_bg.check_cdrate(cd).check_wblist(gbl)
 @clear_profile_bg.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2415,7 +2415,7 @@ async def _(ctx: SekaiHandlerContext):
 adjust_profile_bg = SekaiCmdHandler([
     "/pjsk adjust profile", "/pjsk adjust profile bg", "/pjsk adjust profile background",
     "/调整个人信息背景", "/调整个人信息", "/设置个人信息", "/设置个人信息背景",
-])
+], disabled=True)
 adjust_profile_bg.check_cdrate(cd).check_wblist(gbl)
 @adjust_profile_bg.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -2576,7 +2576,7 @@ async def _(ctx: HandlerContext):
 # 查询绑定历史
 pjsk_bind_history = CmdHandler([
     "/pjsk bind history", "/pjsk bind his", "/绑定历史", "/绑定记录",
-], logger, priority=1)
+], logger, priority=1, disabled=True)
 pjsk_bind_history.check_cdrate(cd).check_wblist(gbl).check_superuser()
 @pjsk_bind_history.handle()
 async def _(ctx: HandlerContext):
@@ -2655,7 +2655,7 @@ async def _(ctx: HandlerContext):
 # 创建游客账号
 pjsk_create_guest_account = SekaiCmdHandler([
     "/pjsk create guest", "/pjsk register", "/pjsk注册",
-], regions=['jp', 'en'])
+], regions=['jp', 'en'], disabled=True)
 guest_account_create_rate_limit = RateLimit(file_db, logger, 2, 'd', rate_limit_name='注册游客账号')
 pjsk_create_guest_account.check_cdrate(cd).check_wblist(gbl).check_cdrate(guest_account_create_rate_limit)
 @pjsk_create_guest_account.handle()

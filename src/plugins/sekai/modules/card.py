@@ -1531,7 +1531,7 @@ async def compose_card_detail_image(ctx: SekaiHandlerContext, card_id: int):
 pjsk_chara_alias = SekaiCmdHandler([
     "/pjsk chara alias",
     "/角色别名", '/查角色别名',
-])
+], disabled=True)
 pjsk_chara_alias.check_cdrate(cd).check_wblist(gbl)
 @pjsk_chara_alias.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1547,7 +1547,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_card = SekaiCmdHandler([
     "/card", "/pjsk card", "/pjsk member", 
     "/查卡", "/查卡牌", "/卡牌列表", "/cards", "/pjsk cards",
-])
+], disabled=True)
 pjsk_card.check_cdrate(cd).check_wblist(gbl)
 @pjsk_card.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1590,7 +1590,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_card_img = SekaiCmdHandler([
     "/pjsk card img",
     "/查卡面", "/卡面", 
-])
+], disabled=True)
 pjsk_card_img.check_cdrate(cd).check_wblist(gbl)
 @pjsk_card_img.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1641,7 +1641,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_box = SekaiCmdHandler([
     "/pjsk box",
     "/卡牌一览", "/卡面一览", "/卡一览",
-])
+], disabled=True)
 pjsk_box.check_cdrate(cd).check_wblist(gbl)
 @pjsk_box.handle()
 async def _(ctx: SekaiHandlerContext):

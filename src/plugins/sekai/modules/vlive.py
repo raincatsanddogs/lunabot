@@ -121,7 +121,7 @@ async def compose_vlive_list_image(ctx: SekaiCmdHandler, vlives, title=None, tit
 # ======================= 指令处理 ======================= #
 
 # 获取最近的vlive信息
-pjsk_live = SekaiCmdHandler(['/pjsk live', '/虚拟live', '/pjsk vlive', "/vlive",])
+pjsk_live = SekaiCmdHandler(['/pjsk live', '/虚拟live', '/pjsk vlive', "/vlive",], disabled=True)
 pjsk_live.check_cdrate(cd).check_wblist(gbl)
 @pjsk_live.handle()
 async def _(ctx: SekaiHandlerContext):

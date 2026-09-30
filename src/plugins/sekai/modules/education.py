@@ -1163,7 +1163,7 @@ async def compose_material_info_image(ctx: SekaiHandlerContext, qid: int, show_a
 pjsk_challenge_info = SekaiCmdHandler([
     "/pjsk challenge info", "/pjsk_challenge_info",
     "/挑战信息", "/挑战详情", "/挑战进度", "/挑战一览", "/每日挑战", 
-])
+], disabled=True)
 pjsk_challenge_info.check_cdrate(cd).check_wblist(gbl)
 @pjsk_challenge_info.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1177,7 +1177,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_power_bonus_info = SekaiCmdHandler([
     "/pjsk power bonus info", "/pjsk_power_bonus_info",
     "/加成信息", "/加成详情", "/加成进度", "/加成一览", "/角色加成",
-])
+], disabled=True)
 pjsk_power_bonus_info.check_cdrate(cd).check_wblist(gbl)
 @pjsk_power_bonus_info.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1191,7 +1191,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_area_item = SekaiCmdHandler([
     "/pjsk area item", "/area item",
     "/区域道具", "/区域道具升级", "/区域道具升级材料",
-])
+], disabled=True)
 pjsk_area_item.check_cdrate(cd).check_wblist(gbl)
 @pjsk_area_item.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1249,7 +1249,7 @@ pjsk_bonds = SekaiCmdHandler([
     "/pjsk bonds", "/pjsk bond",
     "/羁绊", "/羁绊等级", "/角色羁绊", "/羁绊信息", 
     "/牵绊等级", "/牵绊", "/角色牵绊", "/牵绊信息",
-])
+], disabled=True)
 pjsk_bonds.check_cdrate(cd).check_wblist(gbl)
 @pjsk_bonds.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1271,7 +1271,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_leader_count = SekaiCmdHandler([
     "/pjsk leader count",
     "/队长次数", "/角色次数", "/队长游玩次数", "/角色游玩次数",
-])
+], disabled=True)
 pjsk_leader_count.check_cdrate(cd).check_wblist(gbl)
 @pjsk_leader_count.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1283,7 +1283,7 @@ async def _(ctx: SekaiHandlerContext):
 # 查询材料信息
 pjsk_material_info = SekaiCmdHandler([
     "/pjsk material", "/材料信息", "/pjsk材料",
-])
+], disabled=True)
 pjsk_material_info.check_cdrate(cd).check_wblist(gbl)
 @pjsk_material_info.handle()
 async def _(ctx: SekaiHandlerContext):

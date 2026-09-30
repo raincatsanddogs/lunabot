@@ -1431,7 +1431,7 @@ async def compose_winrate_predict_image(ctx: SekaiHandlerContext) -> Image.Image
 pjsk_skp = SekaiCmdHandler([
     "/pjsk sk predict", "/pjsk board predict",
     "/sk预测", "/榜线预测", "/skp",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_skp.check_cdrate(cd).check_wblist(gbl)
 @pjsk_skp.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1449,7 +1449,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_skl = SekaiCmdHandler([
     "/pjsk sk line", "/pjsk board line",
     "/sk线", "/skl", "/榜线",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_skl.check_cdrate(cd).check_wblist(gbl)
 @pjsk_skl.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1484,7 +1484,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_sks = SekaiCmdHandler([
     "/pjsk sk speed", "/pjsk board speed",
     "/时速", "/sks", "/skv", "/sk时速",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_sks.check_cdrate(cd).check_wblist(gbl)
 @pjsk_sks.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1505,7 +1505,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_skds = SekaiCmdHandler([
     "/pjsk sk daily speed", "/pjsk board daily speed",
     "/日速", "/skds", "/skdv", "/sk日速",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_skds.check_cdrate(cd).check_wblist(gbl)
 @pjsk_skds.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1526,7 +1526,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_sk = SekaiCmdHandler([
     "/pjsk sk board", "/pjsk board",
     "/sk", 
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_sk.check_cdrate(cd).check_wblist(gbl)
 @pjsk_sk.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1543,7 +1543,7 @@ async def _(ctx: SekaiHandlerContext):
 # 查房
 pjsk_cf = SekaiCmdHandler([
     "/cf", "/查房", "/pjsk查房",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_cf.check_cdrate(cd).check_wblist(gbl)
 @pjsk_cf.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1560,7 +1560,7 @@ async def _(ctx: SekaiHandlerContext):
 # 查水表
 pjsk_csb = SekaiCmdHandler([
     "/csb", "/查水表", "/pjsk查水表", "/停车时间",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_csb.check_cdrate(cd).check_wblist(gbl)
 @pjsk_csb.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1577,7 +1577,7 @@ async def _(ctx: SekaiHandlerContext):
 # 玩家追踪
 pjsk_ptr = SekaiCmdHandler([
     "/ptr", "/玩家追踪", "/pjsk玩家追踪",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_ptr.check_cdrate(cd).check_wblist(gbl)
 @pjsk_ptr.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1595,7 +1595,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_rtr = SekaiCmdHandler([
     "/rtr", "/skt", "/追踪", "/pjsk追踪", 
     "/sklt", "/sktl", "/分数线追踪", "/pjsk分数线追踪",
-], prefix_args=['', 'wl'])
+], prefix_args=['', 'wl'], disabled=True)
 pjsk_rtr.check_cdrate(cd).check_wblist(gbl)
 @pjsk_rtr.handle()
 async def _(ctx: SekaiHandlerContext):
@@ -1616,7 +1616,7 @@ async def _(ctx: SekaiHandlerContext):
 pjsk_winrate = SekaiCmdHandler([
     "/pjsk winrate predict",
     "/胜率预测", "/5v5预测", "/胜率", "/5v5胜率", "/预测胜率", "/预测5v5",
-], regions=['jp'])
+], regions=['jp'], disabled=True)
 pjsk_winrate.check_cdrate(cd).check_wblist(gbl)
 @pjsk_winrate.handle()
 async def _(ctx: SekaiHandlerContext):
