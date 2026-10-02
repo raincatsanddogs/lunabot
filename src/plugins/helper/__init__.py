@@ -38,9 +38,31 @@ async def handle_help(ctx: HandlerContext):
         except Exception:
             logger.print_exc(f"读取帮助目录 {path} 失败")
 
+    doc_url = (config.get('doc_url') or "").strip()
+
     if service not in documents:
+        if not service and doc_url:
+            template: str = config.get('doc_template') or ""
+            if not template:
+                template = (
+                    "【LunaBot 使用帮助】\n"
+                    "完整使用指南与指令手册请访问网页文档站：\n"
+                    "{doc_url}\n\n"
+                    "发送 /help 英文服务名 查看各服务的指令索引（例如 /help sekai）\n"
+                    "发送 /help 服务名 指令名 或在指令后追加 help 查看指令详情（例如 /help sekai 查卡 或 /查卡 help）"
+                )
+            if r"{doc_url}" in template:
+                content = template.format(doc_url=doc_url).strip()
+            else:
+                content = template.strip()
+            return await ctx.asend_fold_msg_adaptive(content, need_reply=False)
+
+        if service and doc_url:
+            content = f"未找到服务 {service}。\n完整指令手册与可用服务请访问网页文档站：\n{doc_url}\n\n发送 /help 查看可用服务或帮助引导"
+            return await ctx.asend_fold_msg_adaptive(content, need_reply=False)
+
         service_list_text = "\n".join(f"{name} - {title}" for name, (_, title) in documents.items())
-        template: str = config.get('template')
+        template: str = config.get('template') or ""
         if r"{service_list}" in template:
             template = template.format(service_list=service_list_text.strip())
         if service:
@@ -100,4 +122,3 @@ async def handle_help(ctx: HandlerContext):
         logger.print_exc(f"渲染 {service} / {entry.title} 帮助详情失败，回退文字")
         return await ctx.asend_fold_msg_adaptive(entry.detail_markdown(service, prefix=pfx), fallback_method="seperate")
     return await ctx.asend_reply_msg(message)
-

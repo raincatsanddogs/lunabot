@@ -1,3 +1,17 @@
+# 若配置此项，发送 /help 或 /帮助 总览时将显示引导网页信息；留空或未配置时显示下方 template 本地指令列表
+doc_url: ""
+
+# 配置了 doc_url 时，/help 总览发送的提示模版。
+# 可用变量: {doc_url}
+# 留空时使用内置默认文案。
+doc_template: |
+  【LunaBot 使用帮助】
+  完整使用指南与指令手册请访问网页文档站：
+  {doc_url}
+
+  发送 /help 英文服务名 查看各服务的指令索引（例如 /help sekai）
+  发送 /help 服务名 指令名 或在指令后追加 help 查看指令详情（例如 /help sekai 查卡 或 /查卡 help）
+
 template: |
   【LunaBot (XXX Deployed) 使用帮助】
   发送 /help 英文服务名 查看各服务的指令索引
