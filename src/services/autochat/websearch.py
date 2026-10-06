@@ -46,6 +46,67 @@ async def check_public_url(value):
         raise ValueError('URL does not resolve to a public address')
 
 
+TWITTER_STATUS_RE = re.compile(
+    r'^https?://(?:[a-zA-Z0-9-]+\.)?(?:twitter\.com|x\.com|vxtwitter\.com|fixupx\.com|fxtwitter\.com)/([A-Za-z0-9_]+)/status/(\d+)',
+    re.IGNORECASE,
+)
+
+
+def format_tweet_content(tweet_data: dict, original_url: str) -> str:
+    tweet = tweet_data.get('tweet') if isinstance(tweet_data.get('tweet'), dict) else tweet_data
+    author = tweet.get('author') or {}
+    author_name = str(author.get('name') or '未知作者')
+    screen_name = str(author.get('screen_name') or '')
+    author_str = f'{author_name} (@{screen_name})' if screen_name else author_name
+
+    text = str(tweet.get('text') or '').strip()
+    created_at = str(tweet.get('created_at') or '')
+
+    lines = [f'【推文作者】: {author_str}']
+    if created_at:
+        lines.append(f'【发布时间】: {created_at}')
+    lines.append(f'【正文】:\n{text if text else "(无纯文本正文)"}')
+
+    media = tweet.get('media') or {}
+    all_media = media.get('all') or []
+    if all_media and isinstance(all_media, list):
+        descs = []
+        for idx, m in enumerate(all_media, 1):
+            if not isinstance(m, dict):
+                continue
+            m_type = str(m.get('type') or '媒体')
+            alt = str(m.get('altText') or '').strip()
+            alt_desc = f' (说明: {alt})' if alt else ''
+            url = str(m.get('url') or '')
+            descs.append(f'- 附件{idx} [{m_type}]{alt_desc}: {url}')
+        if descs:
+            lines.append('【媒体附件】:\n' + '\n'.join(descs))
+
+    quote = tweet.get('quote')
+    if isinstance(quote, dict) and quote:
+        q_author = quote.get('author') or {}
+        q_author_name = str(q_author.get('name') or '未知作者')
+        q_screen_name = str(q_author.get('screen_name') or '')
+        q_author_str = f'{q_author_name} (@{q_screen_name})' if q_screen_name else q_author_name
+        q_text = str(quote.get('text') or '').strip()
+        lines.append(f'【引用的推文】 ({q_author_str}):\n{q_text if q_text else "(无纯文本正文)"}')
+
+    likes = tweet.get('likes')
+    retweets = tweet.get('retweets')
+    replies = tweet.get('replies')
+    stats = []
+    if likes is not None:
+        stats.append(f'喜欢: {likes}')
+    if retweets is not None:
+        stats.append(f'转推: {retweets}')
+    if replies is not None:
+        stats.append(f'回复: {replies}')
+    if stats:
+        lines.append(f'【互动统计】: {" | ".join(stats)}')
+
+    return '\n\n'.join(lines)
+
+
 class TavilyProvider:
     def __init__(self, read_config, cache: SearchCache | None = None):
         self.read_config = read_config
@@ -117,6 +178,33 @@ class TavilyProvider:
                         raise ValueError('Tavily response too large')
                 return json.loads(data)
 
+    async def _fetch_twitter_status(self, user: str, status_id: str, original_url: str, config: dict):
+        api_url = f'https://api.fxtwitter.com/{user}/status/{status_id}'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (compatible; LunaBot/1.0; +https://github.com)',
+            'Accept': 'application/json',
+        }
+        timeout_sec = min(float(config.get('timeout', 10)), 15.0)
+        proxy = config.get('proxy') or None
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout_sec)) as session:
+            async with session.get(api_url, headers=headers, proxy=proxy, allow_redirects=True) as response:
+                if response.status != 200:
+                    return None
+                data = await response.json()
+                if not isinstance(data, dict) or data.get('code') != 200:
+                    return None
+                tweet = data.get('tweet')
+                if not isinstance(tweet, dict):
+                    return None
+                content = format_tweet_content(tweet, original_url)
+                return {
+                    'url': original_url,
+                    'content': content[:12000],
+                    'truncated': len(content) > 12000,
+                    'retrieved_at': time.time(),
+                    'source': 'fxtwitter_api',
+                }
+
     async def execute(self, method, args):
         try:
             config = self.settings()
@@ -163,6 +251,19 @@ class TavilyProvider:
                         return cached
 
                 await check_public_url(url)
+                tw_match = TWITTER_STATUS_RE.match(url)
+                if tw_match:
+                    try:
+                        tw_resp = await self._fetch_twitter_status(
+                            tw_match.group(1), tw_match.group(2), url, config
+                        )
+                        if tw_resp:
+                            if use_cache:
+                                self.cache.set('read_web', url, tw_resp)
+                            return tw_resp
+                    except Exception:
+                        pass
+
                 value = await self.request('extract', {'urls': [url], 'extract_depth': 'basic', 'format': 'text'})
                 results = value.get('results', [])
                 if not results:

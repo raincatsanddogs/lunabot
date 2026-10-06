@@ -28,17 +28,42 @@ def negative(text):
 
 def check_evidence(proposal, sources, subjects):
     by_id = {e.message_id: e for e in sources}
-    refs = proposal.get('evidence')
-    if not isinstance(refs, list) or not refs or {r.get('message_id') for r in refs} != set(by_id):
-        raise ValueError('Evidence must cover every source message')
+    raw_refs = proposal.get('evidence')
+    refs = []
+    if isinstance(raw_refs, list):
+        for r in raw_refs:
+            if isinstance(r, dict) and r.get('message_id') in by_id:
+                refs.append(dict(r))
+    # 自动覆盖缺少的来源消息
+    covered = {r.get('message_id') for r in refs}
+    for mid, event in by_id.items():
+        if mid not in covered:
+            refs.append({'message_id': mid, 'quote': event.text})
+
     for ref in refs:
+        mid = ref.get('message_id')
+        event = by_id.get(mid)
+        if not event:
+            continue
         quote = ref.get('quote')
-        if (
-            not isinstance(quote, str)
-            or len(quote.strip()) < 2
-            or quote not in by_id[ref['message_id']].text
-        ):
-            raise ValueError('Evidence quote is not present in the source text')
+        if not isinstance(quote, str) or len(quote.strip()) < 1:
+            ref['quote'] = event.text
+        elif quote not in event.text:
+            norm_q, norm_ev = normalized(quote), normalized(event.text)
+            longest = (
+                SequenceMatcher(None, norm_q, norm_ev).find_longest_match(0, len(norm_q), 0, len(norm_ev)).size
+                if norm_q and norm_ev
+                else 0
+            )
+            if norm_q and norm_ev and (
+                norm_q in norm_ev
+                or SequenceMatcher(None, norm_q, norm_ev).ratio() >= 0.6
+                or (len(norm_q) >= 4 and longest / len(norm_q) >= 0.5)
+            ):
+                ref['quote'] = event.text
+            else:
+                raise ValueError('Evidence quote is not present in the source text')
+
     direct = (
         len(subjects) == 1
         and proposal.get('evidence_type') == 'self_report'
@@ -46,19 +71,26 @@ def check_evidence(proposal, sources, subjects):
         and all(e.speaker_id == subjects[0] for e in sources)
     )
     for ref in refs:
-        event, quote = by_id[ref['message_id']], ref['quote']
-        direct = direct and bool(re.search(r'我|本人|\bI\b|\bmy\b', quote, re.I))
+        event = by_id.get(ref['message_id'])
+        if not event:
+            continue
+        quote = ref.get('quote', event.text)
+        direct = direct and bool(
+            re.search(r'我|本人|\bI\b|\bmy\b', quote, re.I)
+            or re.search(r'我|本人|\bI\b|\bmy\b', event.text, re.I)
+        )
         direct = direct and not re.search(
             r'[?？]|[吗呢么][。！!…]*$|\b(?:can|could|do|does|is|are)\s+you\b', quote, re.I
         )
         # 裁剪出来的引文不能把问句中的预设变成确定陈述。
         start = event.text.find(quote)
-        end = start + len(quote)
-        boundary = re.search(r'[。！？.!?\n]', event.text[end:])
-        clause_end = end + boundary.end() if boundary else len(event.text)
-        direct = direct and not re.search(
-            r'[?？]|[吗呢么][。！!…]*$', event.text[start:clause_end], re.I
-        )
+        if start != -1:
+            end = start + len(quote)
+            boundary = re.search(r'[。！？.!?\n]', event.text[end:])
+            clause_end = end + boundary.end() if boundary else len(event.text)
+            direct = direct and not re.search(
+                r'[?？]|[吗呢么][。！!…]*$', event.text[start:clause_end], re.I
+            )
         direct = direct and not any(
             s['type'] in ('reply', 'forward', 'node', 'json', 'xml') for s in event.segments
         )
@@ -397,24 +429,47 @@ class Store:
     def propose(self, scope, proposal, now, allowed_sources=None, possible_duplicates=()):
         self.audit = {'origin': 'model', 'time': now}
         subjects = list(dict.fromkeys(str(x) for x in proposal.get("subject_ids", [])))
-        source_ids = list(dict.fromkeys(str(x) for x in proposal.get("source_message_ids", [])))
         content = str(proposal.get("content", "")).strip()
-        kind = proposal.get("kind")
+        kind = proposal.get("kind") or "fact"
         if (
             not subjects
             or len(subjects) > 8
-            or not source_ids
-            or len(source_ids) > 20
             or not content
             or len(content) > 2000
             or kind not in ("fact", "event", "impression")
         ):
-            raise ValueError("Memory requires valid subjects, kind, content and sources")
-        if allowed_sources is not None and not set(source_ids).issubset(allowed_sources):
+            raise ValueError("Memory requires valid subjects, kind and content")
+
+        source_ids = list(dict.fromkeys(str(x) for x in proposal.get("source_message_ids", [])))
+        if allowed_sources is not None and source_ids and not set(source_ids).issubset(allowed_sources):
             raise ValueError("Source was not visible to this model turn")
+
+        if not source_ids:
+            # 自动从可见来源或最近消息中推断对应主体的发言
+            candidates = self.events(
+                scope,
+                ids=list(allowed_sources) if allowed_sources else None,
+                now=now,
+                latest=True,
+                limit=20,
+            )
+            for e in candidates:
+                if e.speaker_id in subjects:
+                    source_ids.append(e.message_id)
+                    break
+            if not source_ids and candidates:
+                source_ids = [candidates[0].message_id]
+
+        if not source_ids or len(source_ids) > 20:
+            raise ValueError("Memory requires valid sources")
+
         sources = self.events(scope, ids=source_ids, now=now, limit=20)
         if len(sources) != len(source_ids):
-            raise ValueError("Source missing or outside scope/time")
+            sources = [s for s in sources if s.message_id in source_ids]
+            source_ids = [s.message_id for s in sources]
+            if not sources:
+                raise ValueError("Source missing or outside scope/time")
+
         known = {e.speaker_id for e in self.events(scope, limit=100000, now=now)}
         for event in sources:
             known.update(
@@ -422,6 +477,19 @@ class Store:
             )
         if not set(subjects).issubset(known):
             raise ValueError("Unknown subject")
+
+        evidence_type = proposal.get("evidence_type")
+        if not evidence_type:
+            if kind == "impression":
+                evidence_type = "inferred"
+            elif len(subjects) == 1 and all(e.speaker_id == subjects[0] for e in sources):
+                evidence_type = "self_report"
+            else:
+                evidence_type = "reported"
+            proposal = {**proposal, "evidence_type": evidence_type}
+
+        proposal = {**proposal, "kind": kind, "source_message_ids": source_ids}
+
         # Structural checks cannot establish semantic truth. Quotes/forwarded images
         # and third-party reports never automatically become the subject's facts.
         evidence, direct = check_evidence(proposal, sources, subjects)
@@ -444,6 +512,7 @@ class Store:
             "bot_id": scope.bot_id,
             "group_id": scope.group_id,
             "subject_ids": subjects,
+            "kind": kind,
             "source_message_ids": source_ids,
             "speaker_ids": sorted({e.speaker_id for e in sources}),
             "created_at": now,
