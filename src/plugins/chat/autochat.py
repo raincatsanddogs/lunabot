@@ -40,6 +40,24 @@ def get_autochat_store():
     return _store
 
 
+def get_all_command_prefixes() -> tuple[str, ...]:
+    prefixes = {'/'}
+    try:
+        from src.plugins.utils.handler import get_command_prefix
+        prefixes.add(get_command_prefix())
+    except Exception:
+        pass
+    try:
+        from nonebot import get_driver
+        driver = get_driver()
+        for p in getattr(driver.config, 'command_start', ()):
+            if p:
+                prefixes.add(p)
+    except Exception:
+        pass
+    return tuple(sorted(prefixes, key=len, reverse=True))
+
+
 @before_record_hook
 async def record_new_message(bot: Bot, event: MessageEvent):
     if not is_group_msg(event) or str(event.user_id) == str(bot.self_id):
@@ -51,7 +69,8 @@ async def record_new_message(bot: Bot, event: MessageEvent):
     plain_text = event.message.extract_plain_text()
     if check_is_banned_msg(plain_text):
         return
-    if plain_text.strip().startswith(('/um', '/autochat um', '/autochat sticker')):
+    text = plain_text.strip()
+    if text.startswith(get_all_command_prefixes()) or text.startswith(('autochat um', 'autochat sticker')):
         return
     get_autochat_store().add_event(
         AutochatEvent(

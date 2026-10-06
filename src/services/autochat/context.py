@@ -4,20 +4,26 @@ from __future__ import annotations
 
 import copy
 
+import re
+
 from .store import dump
+
+CJK_PATTERN = re.compile(r'[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf]')
 
 
 def estimate(messages, image_reserve=4096):
-    # UTF-8 bytes are a conservative text-token bound, not provider token usage.
-    # Image accounting varies by provider; deployments can increase this reserve.
-    total = len(dump(messages).encode('utf-8'))
+    text = dump(messages)
+    cjk_count = len(CJK_PATTERN.findall(text))
+    other_count = len(text) - cjk_count
+    # CJK characters are ~1.15 tokens/char; ASCII/JSON formatting are ~0.32 tokens/char
+    total = int(cjk_count * 1.15 + other_count * 0.32)
     for message in messages:
         if isinstance(message.get('content'), list):
             total += sum(image_reserve for p in message['content'] if p.get('type') == 'image_ref')
     return total
 
 
-def completed_tail(messages, byte_limit):
+def completed_tail(messages, token_limit):
     """Keep entire assistant/tool exchanges together for the summarizer."""
     groups, group = [], []
     for message in messages:
@@ -29,7 +35,7 @@ def completed_tail(messages, byte_limit):
         groups.append(group)
     kept = []
     for group in reversed(groups):
-        if len(dump(group + kept).encode('utf-8')) > byte_limit:
+        if estimate(group + kept) > token_limit:
             break
         kept = group + kept
     return kept
@@ -43,7 +49,7 @@ def fit_event(message, budget, image_reserve):
     content = []
     for part in result['content']:
         if part['type'] == 'text':
-            part['text'] = part['text'][: max(80, budget // 12)]
+            part['text'] = part['text'][: max(80, budget // 4)]
         content.append(part)
         if estimate([{'role': 'user', 'content': content}], image_reserve) > budget - 220:
             content.pop()

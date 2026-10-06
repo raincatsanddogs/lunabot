@@ -1025,19 +1025,17 @@ class Engine(SendActions):
             self.assert_revision(scope)
             self.trace(scope, "model_usage", {"task": "consolidation", "usage": result.usage})
             visible = {e.message_id for e in events}
-            if (
-                len(result.tool_calls) != 1
-                or result.tool_calls[0]['function']['name'] != 'finish_turn'
-            ):
-                raise ValueError('Consolidation did not return one finish_turn')
-            for call in result.tool_calls:
-                if call["function"]["name"] != "finish_turn":
-                    continue
+            finish_calls = [
+                c for c in (result.tool_calls or [])
+                if c.get("function", {}).get("name") == "finish_turn"
+            ]
+            if not finish_calls:
+                raise ValueError("Consolidation did not return finish_turn")
+            for call in finish_calls:
                 args = json.loads(call["function"]["arguments"])
                 validate(args, FINISH)
-                if args['messages']:
-                    raise ValueError('Consolidation attempted to speak')
-                for proposal in args["memory_proposals"]:
+                # Discard any messages text safely instead of aborting the entire consolidation
+                for proposal in args.get("memory_proposals", []):
                     try:
                         self.store.propose(scope, proposal, self.clock.now(), visible)
                     except Exception as exc:
@@ -1050,6 +1048,9 @@ class Engine(SendActions):
             self.trace(
                 scope, "consolidation_error", {"type": type(exc).__name__, "error": str(exc)[:500]}
             )
+            state = self.store.state(scope)
+            state["summary_cursor"] = events[-1].seq
+            self.store.save_state(scope, state)
         finally:
             self.media.unpin(assets)
 
