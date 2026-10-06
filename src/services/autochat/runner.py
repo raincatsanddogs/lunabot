@@ -77,13 +77,13 @@ async def web_call(engine, scope, batch_id, call_key, name, args, visible):
             return {'error': 'URL was not visible or is not public'}
     budget_key = 'web-budget:' + batch_id
     budget = engine.store.get(budget_key, {})
-    limit = engine.settings.max_search_calls if name == 'web_search' else engine.settings.max_web_read_calls
+    limit = engine.settings.max_search_calls if name == 'search_web' else engine.settings.max_web_read_calls
     if budget.get(name, 0) >= limit:
         return {'error': 'web_budget_exhausted'}
     budget[name] = budget.get(name, 0) + 1
     engine.store.set(budget_key, budget)
     engine.store.set(cache_key, {'error': 'search_interrupted; not automatically repeated'})
-    if name == 'web_search':
+    if name == 'search_web':
         args = {**args, 'limit': min(args.get('limit', 5), engine.settings.search_max_results)}
     try:
         result = await engine.platform.search(provider, name, args)
@@ -111,7 +111,7 @@ def record_result(engine, scope, batch_id, journal, call, value):
     active.setdefault('attachments', []).extend(parts)
     state = engine.store.state(scope)
     state['visible_stickers'] = sorted(set(state.get('visible_stickers', [])) | set(value.pop('_sticker_ids', [])))
-    if call['function']['name'] == 'web_search':
+    if call['function']['name'] == 'search_web':
         state['web_urls'] = list(dict.fromkeys(state.get('web_urls', []) + [r['url'] for r in value.get('results', [])]))[-200:]
     content = dump(value)
     if len(content) > 16000:
@@ -287,7 +287,7 @@ async def run_turn(engine, scope, events, batch_id):
                                                           args, set(active['visible']), journal['watermark'], authors)
                         if value.get('result', {}).get('reason') == 'disabled_or_new_messages':
                             active['stale'] = True
-                    elif name in ('web_search', 'read_web'):
+                    elif name in ('search_web', 'read_web'):
                         value = await web_call(engine, scope, batch_id, f'{batch_id}:{generation}:{active["round"]}:{cursor}', name, args, set(active['visible']))
                     elif name == 'search_stickers':
                         if active.get('reads', 0) >= engine.settings.max_read_calls:

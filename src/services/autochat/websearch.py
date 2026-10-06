@@ -116,7 +116,7 @@ class TavilyProvider:
 
     async def execute(self, method, args):
         try:
-            if method == 'web_search':
+            if method == 'search_web':
                 query = args['query']
                 if not isinstance(query, str) or not query.strip() or len(query) > 500:
                     raise ValueError('Invalid query')
