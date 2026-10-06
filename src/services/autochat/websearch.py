@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 
 import aiohttp
 
+from .search_cache import SearchCache
+
 
 def public_url(value):
     if not isinstance(value, str) or len(value) > 2048:
@@ -45,9 +47,10 @@ async def check_public_url(value):
 
 
 class TavilyProvider:
-    def __init__(self, read_config):
+    def __init__(self, read_config, cache: SearchCache | None = None):
         self.read_config = read_config
         self.requests = deque()
+        self.cache = cache or SearchCache()
 
     def settings(self):
         config = dict(self.read_config())
@@ -116,6 +119,9 @@ class TavilyProvider:
 
     async def execute(self, method, args):
         try:
+            config = self.settings()
+            use_cache = self.cache is not None and config.get('cache', True)
+
             if method == 'search_web':
                 query = args['query']
                 if not isinstance(query, str) or not query.strip() or len(query) > 500:
@@ -123,6 +129,13 @@ class TavilyProvider:
                 limit = args.get('limit', 5)
                 if type(limit) is not int or not 1 <= limit <= 5:
                     raise ValueError('Invalid limit')
+
+                if use_cache:
+                    cached = self.cache.get('search_web', query)
+                    if cached is not None:
+                        results = cached.get('results', [])[:limit]
+                        return {**cached, 'results': results}
+
                 payload = {'query': query, 'max_results': limit, 'search_depth': 'basic',
                            'include_answer': False, 'include_raw_content': False}
                 if args.get('time_range'):
@@ -138,16 +151,28 @@ class TavilyProvider:
                             'content': str(item.get('content', ''))[:1200],
                             'published_date': str(item.get('published_date') or '')[:100],
                         })
-                return {'results': results, 'retrieved_at': time.time(), 'source': 'external_web'}
+                resp = {'results': results, 'retrieved_at': time.time(), 'source': 'external_web'}
+                if use_cache:
+                    self.cache.set('search_web', query, resp)
+                return resp
             if method == 'read_web':
-                await check_public_url(args['url'])
-                value = await self.request('extract', {'urls': [args['url']], 'extract_depth': 'basic', 'format': 'text'})
+                url = args['url']
+                if use_cache:
+                    cached = self.cache.get('read_web', url)
+                    if cached is not None:
+                        return cached
+
+                await check_public_url(url)
+                value = await self.request('extract', {'urls': [url], 'extract_depth': 'basic', 'format': 'text'})
                 results = value.get('results', [])
                 if not results:
-                    return {'error': 'page_unavailable', 'url': args['url']}
+                    return {'error': 'page_unavailable', 'url': url}
                 content = str(results[0].get('raw_content') or '')
-                return {'url': args['url'], 'content': content[:12000], 'truncated': len(content) > 12000,
+                resp = {'url': url, 'content': content[:12000], 'truncated': len(content) > 12000,
                         'retrieved_at': time.time(), 'source': 'external_web'}
+                if use_cache:
+                    self.cache.set('read_web', url, resp)
+                return resp
             return {'error': 'unknown_search_method'}
         except (asyncio.TimeoutError, aiohttp.ClientError):
             return {'error': 'search_network_error'}
