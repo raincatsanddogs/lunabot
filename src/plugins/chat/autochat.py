@@ -15,6 +15,7 @@ from src.services.autochat.management import (
     requires_admin,
     operation_id,
     format_result,
+    format_profile_result,
     WRITES,
 )
 
@@ -428,6 +429,13 @@ async def handle_memory_command(ctx):
                     f'操作结果待确认，勿重复新增。查询：/um operation {oid}'
                 )
             return await ctx.asend_reply_msg('会话服务暂时无法响应，请稍后查询')
+        if command['op'] == 'self':
+            target_uid = int(command['subjects'][0]) if command.get('subjects') else ctx.user_id
+            try:
+                nickname = await get_group_member_name(ctx.group_id, target_uid)
+            except Exception:
+                nickname = str(target_uid)
+            return await ctx.asend_fold_msg_adaptive(format_profile_result(result, nickname, admin=admin))
         return await ctx.asend_fold_msg_adaptive(format_result(result))
     except (ValueError, PermissionError, aiorpcx.RPCError) as exc:
         return await ctx.asend_reply_msg(str(exc))

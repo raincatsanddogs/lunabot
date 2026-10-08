@@ -186,12 +186,12 @@ async def run_turn(engine, scope, events, batch_id):
                     observe(engine, scope, updates)
                     journal['consumed'] = list(dict.fromkeys(journal['consumed'] + [e.message_id for e in updates]))
                     journal['watermark'] = max(e.seq for e in updates)
-                    await engine.prepare_context(scope, required_ids=journal['consumed'], include_tail=False)
+                    await engine.prepare_context(scope, model=engine.store.state(scope).get('model'), required_ids=journal['consumed'], include_tail=False)
                 state = engine.store.state(scope)
                 journal['visible'] = state['visible_sources']
                 model, context = state['model'], state['context']
                 if estimate(context, engine.settings.image_token_reserve) > engine.input_budget(model):
-                    await engine.prepare_context(scope, force=True, required_ids=journal['consumed'])
+                    await engine.prepare_context(scope, force=True, model=model, required_ids=journal['consumed'])
                     state = engine.store.state(scope)
                     context = state['context']
                     journal['visible'] = state['visible_sources']
@@ -211,21 +211,27 @@ async def run_turn(engine, scope, events, batch_id):
                     result = await engine.gateway.query_llm(model, request, tools,
                         {'max_tokens': engine.settings.output_tokens, 'timeout': engine.settings.timeout})
                     engine.assert_revision(scope)
+                    assistant_msg = result.assistant_message or {}
+                    content = assistant_msg.get('content')
+                    has_content = bool(content and str(content).strip())
+                    if not has_content and not result.tool_calls:
+                        raise RuntimeError(f"Model {model} returned empty content and no tool calls")
                 except Exception as exc:
-                    engine.trace(scope, 'model_error', {'model': model, 'type': type(exc).__name__})
-                    chain = [engine.settings.model, *engine.settings.fallback_models]
-                    position = chain.index(model) if model in chain else len(chain)
-                    if position + 1 >= len(chain):
+                    engine.trace(scope, 'model_error', {'model': model, 'type': type(exc).__name__, 'error': str(exc)})
+                    engine.mark_model_unavailable(model)
+                    next_model = engine.next_fallback_model(model)
+                    if not next_model:
                         raise
-                    await engine.prepare_context(scope, force=True, model=chain[position + 1], required_ids=journal['consumed'])
+                    await engine.prepare_context(scope, force=True, model=next_model, required_ids=journal['consumed'])
                     continue
+                engine.mark_model_available(model)
                 engine.trace(scope, 'model_usage', {'task': 'chat', 'usage': result.usage, 'finish_reason': result.finish_reason})
                 engine.trace(scope, 'model_response', {'batch_id': batch_id, 'round': index, 'model': model, 'assistant_message': result.assistant_message})
                 st = engine.store.state(scope)
                 if estimate(st['context'] + [result.assistant_message], engine.settings.image_token_reserve) > engine.input_budget(model) * .85:
                     # The model has now consumed the preceding completed exchange.
                     # Compact it before opening a new assistant/tool exchange.
-                    await engine.prepare_context(scope, force=True, required_ids=journal['consumed'])
+                    await engine.prepare_context(scope, force=True, model=model, required_ids=journal['consumed'])
                     st = engine.store.state(scope)
                 st['context'].append(result.assistant_message)
                 journal['active'] = {'calls': result.tool_calls, 'cursor': 0, 'round': index,

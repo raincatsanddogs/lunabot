@@ -52,6 +52,7 @@ class Engine(SendActions):
         self.ingestions = {}
         self.last_media_cleanup = 0
         self.media.release_contexts = self.release_idle_contexts
+        self.model_failures = {}
         self.store.recover_actions()
         pending_calls = set()
         for row in store.db.execute("SELECT value FROM kv WHERE key LIKE 'turn:%'"):
@@ -100,6 +101,39 @@ class Engine(SendActions):
         self.media.settings = settings
         if settings.embedding_model != self.index.model:
             self.index = MemoryIndex(self.store, self.gateway, settings.embedding_model, self.clock)
+
+    def get_model_chain(self) -> list[str]:
+        return [self.settings.model, *self.settings.fallback_models]
+
+    def is_model_available(self, model: str) -> bool:
+        until = self.model_failures.get(model, 0)
+        return self.clock.now() >= until
+
+    def mark_model_unavailable(self, model: str, duration: float | None = None):
+        cooldown = (
+            duration
+            if duration is not None
+            else getattr(self.settings, 'model_cooldown_seconds', 120.0)
+        )
+        self.model_failures[model] = self.clock.now() + cooldown
+
+    def mark_model_available(self, model: str):
+        self.model_failures.pop(model, None)
+
+    def get_active_model(self) -> str:
+        chain = self.get_model_chain()
+        for m in chain:
+            if self.is_model_available(m):
+                return m
+        return self.settings.model
+
+    def next_fallback_model(self, current_model: str) -> str | None:
+        chain = self.get_model_chain()
+        start = chain.index(current_model) + 1 if current_model in chain else 0
+        for m in chain[start:]:
+            if self.is_model_available(m):
+                return m
+        return None
 
     def assert_revision(self, scope):
         revision = self.task_revision.get()
@@ -492,7 +526,7 @@ class Engine(SendActions):
         )
         events = sorted(by_id.values(), key=lambda e: e.seq)
         events = [e for e in events if not e.text.strip().startswith("/")]
-        selected = model or state.get('model') or self.settings.model
+        selected = model if model else self.get_active_model()
         if selected not in [self.settings.model, *self.settings.fallback_models]:
             selected = self.settings.model
         spec = getattr(self.gateway, 'models', {}).get(selected)
@@ -699,6 +733,7 @@ class Engine(SendActions):
                     ),
                 }
             )
+        state['model'] = selected
         self.store.save_state(scope, state)
         self.media.clean()
 

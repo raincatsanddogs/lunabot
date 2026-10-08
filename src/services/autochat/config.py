@@ -41,6 +41,7 @@ FIELDS = {
     'chat.context.image_token_reserve': 'image_token_reserve',
     'chat.llm.max_tokens': 'output_tokens',
     'chat.llm.timeout': 'timeout',
+    'chat.llm.model_cooldown_seconds': 'model_cooldown_seconds',
     'chat.llm.emb_model': 'embedding_model',
     'chat.llm.vision_model': 'vision_model',
     'summary.model': 'summary_model',
@@ -137,7 +138,11 @@ def parse_config(raw):
             continue
         if isinstance(default, str):
             valid = isinstance(value, str)
-        elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout', 'send_interval_seconds', 'sticker_cooldown'):
+            if valid and field in ('summary_model', 'embedding_model', 'vision_model', 'sticker_annotation_model'):
+                value = value.strip()
+                if value.startswith('- '):
+                    value = value[2:].strip()
+        elif field in ('ambient_p', 'followup_p', 'debounce', 'max_batch_wait', 'timeout', 'send_interval_seconds', 'sticker_cooldown', 'model_cooldown_seconds'):
             valid = (
                 isinstance(value, (int, float))
                 and not isinstance(value, bool)

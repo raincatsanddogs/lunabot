@@ -126,6 +126,7 @@ class Settings:
     image_token_reserve: int = 4096
     timeout: float = 120
     trigger_keywords: dict[str, float] = field(default_factory=dict)
+    model_cooldown_seconds: float = 120.0
 
     def __post_init__(self):
         for name in ('ambient_p', 'followup_p'):
@@ -163,7 +164,7 @@ class Settings:
             or self.max_batch_wait < self.debounce
         ):
             raise ValueError('Invalid scheduler/context limits')
-        for name in ('send_interval_seconds', 'sticker_cooldown'):
+        for name in ('send_interval_seconds', 'sticker_cooldown', 'model_cooldown_seconds'):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f'Invalid {name}')

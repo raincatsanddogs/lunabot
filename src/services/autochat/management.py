@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import shlex
+from datetime import datetime
 
 from .store import dump
 
@@ -71,7 +72,7 @@ def parse_command(text, mentions, user_id):
     if 'kind' in request and request['kind'] not in ('fact', 'event', 'impression'):
         raise ValueError('类型应为 fact、event 或 impression')
     if op == 'self':
-        request.update(op='list', subjects=request['subjects'] or [str(user_id)])
+        request.update(op='self', subjects=request['subjects'] or [str(user_id)])
     if op in ('show', 'edit', 'delete', 'history', 'operation'):
         if not plain:
             raise ValueError('缺少 ID；编辑和删除需要 ID@版本')
@@ -106,10 +107,15 @@ def operation_id(scope, actor, message_id):
 
 
 def memory_value(row):
-    return {
+    res = {
         **json.loads(row['payload']),
         **{k: row[k] for k in ('id', 'kind', 'content', 'status', 'version')},
     }
+    if 'time' in row.keys():
+        res['time'] = row['time']
+    elif 'changed_at' in row.keys():
+        res['time'] = row['changed_at']
+    return res
 
 
 class MemoryManagement:
@@ -157,7 +163,7 @@ class MemoryManagement:
                 ],
                 'page': request.get('page', 1),
             }
-        if op not in ('list', 'search'):
+        if op not in ('self', 'list', 'search'):
             raise ValueError('Unknown memory query')
         status = request.get('status', 'active')
         if status not in STATUSES | {'all'}:
@@ -178,15 +184,16 @@ class MemoryManagement:
             where.append('instr(lower(m.content),lower(?))>0')
             args.append(request['query'])
         sql = ' FROM memories m WHERE ' + ' AND '.join(where)
+        limit = 50 if op == 'self' else 10
         page = int(request.get('page', 1))
         if page < 1:
             raise ValueError('Invalid page')
         total = self.store.db.execute('SELECT COUNT(*)' + sql, args).fetchone()[0]
         rows = self.store.db.execute(
-            'SELECT m.*' + sql + ' ORDER BY m.time DESC,m.id LIMIT 10 OFFSET ?',
-            [*args, (page - 1) * 10],
+            'SELECT m.*' + sql + f' ORDER BY m.time DESC,m.id LIMIT {limit} OFFSET ?',
+            [*args, (page - 1) * limit],
         ).fetchall()
-        return {'records': [memory_value(row) for row in rows], 'page': page, 'total': total}
+        return {'records': [memory_value(row) for row in rows], 'page': page, 'total': total, 'op': op}
 
     def mutate(self, scope, request, actor, message_id, now):
         """同一事务保存当前条目、审计历史、幂等结果和上下文失效标记。"""
@@ -334,3 +341,43 @@ def format_result(result):
             f"第 {result['page']} 页" + (f"，共 {result['total']} 条" if 'total' in result else '')
         )
     return '\n\n'.join(lines) if result['records'] else '没有符合条件的记忆'
+
+
+def format_profile_result(result, nickname, admin=False):
+    records = result.get('records', [])
+    if not records:
+        return f'对@{nickname}的记忆: 无'
+
+    lines = [f'对@{nickname}的记忆']
+
+    def _format_item(item):
+        text = item.get('content', '')
+        if admin:
+            text += f" [{item['id']}@{item['version']}]"
+        return text
+
+    facts_and_impressions = [
+        item for item in records if item.get('kind') in ('fact', 'impression')
+    ]
+    events = [
+        item for item in records if item.get('kind') == 'event'
+    ]
+
+    if facts_and_impressions:
+        lines.append('👤 【用户画像】')
+        for item in facts_and_impressions:
+            lines.append(f'· {_format_item(item)}')
+
+    if events:
+        lines.append('📅 【近期事件】')
+        sorted_events = sorted(events, key=lambda x: x.get('time', 0))
+        for ev in sorted_events:
+            t = ev.get('time', 0)
+            time_str = datetime.fromtimestamp(t).strftime('%m-%d %H:%M') if t else '未知时间'
+            lines.append(f'[{time_str}] {_format_item(ev)}')
+
+    if not facts_and_impressions and not events:
+        for item in records:
+            lines.append(f'· {_format_item(item)}')
+
+    return '\n'.join(lines)
