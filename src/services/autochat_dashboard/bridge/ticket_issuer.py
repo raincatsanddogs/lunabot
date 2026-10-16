@@ -29,7 +29,7 @@ class TicketIssuer:
         role: str,
         allowed_groups: List[str],
         allowed_scopes: Optional[List[str]] = None,
-        base_url: str = "http://127.0.0.1:18088",
+        base_url: Optional[str] = None,
     ) -> str:
         """Generate a single-use OTT and store its SHA-256 hash in SQLite.
         
@@ -38,12 +38,19 @@ class TicketIssuer:
             role: 'superuser' or 'group_admin'
             allowed_groups: list of authorized group ID strings (e.g. ["123", "456"], or ["*"] for superuser)
             allowed_scopes: list of authorized scopes (e.g. ["bot:123"])
-            base_url: Base HTTP(S) address of the dashboard frontend
+            base_url: Base HTTP(S) address of the dashboard frontend (None to resolve from config)
             
         Returns:
             The complete URL containing the token in the URL hash fragment (#ticket=...),
             ensuring it never leaks via server access logs or HTTP Referer headers.
         """
+        if not base_url:
+            try:
+                from ..server.config import settings
+                base_url = (settings.PUBLIC_URL or f"http://{settings.HOST if settings.HOST != '0.0.0.0' else '127.0.0.1'}:{settings.PORT}").rstrip("/")
+            except Exception:
+                base_url = "http://127.0.0.1:18088"
+
         raw_ticket = secrets.token_hex(32)
         ticket_hash = hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest()
 

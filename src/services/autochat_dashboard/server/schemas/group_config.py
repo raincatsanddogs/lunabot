@@ -23,7 +23,7 @@ class GroupConfigDetail(BaseModel):
     enabled: bool = True
     ambient_p: float = Field(0.04, ge=0.0, le=1.0, description="基础闲聊接话概率")
     followup_p: float = Field(0.85, ge=0.0, le=1.0, description="互动跟进接话概率")
-    cooldown_sec: int = Field(25, ge=0, le=3600, description="回复冷却秒数")
+    cooldown_sec: int = Field(0, ge=0, le=86400, description="回复冷却秒数")
     trigger_keywords: Dict[str, float] = Field(default_factory=dict, description="关键词与增量权重字典")
     persona: str = Field("", description="分群专用人设 System Prompt")
     blacklist_user_ids: List[str] = Field(default_factory=list, description="忽略的群成员 QQ 号列表")

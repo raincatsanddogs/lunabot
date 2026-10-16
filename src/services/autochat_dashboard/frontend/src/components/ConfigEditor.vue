@@ -12,7 +12,7 @@ const form = ref({
   enabled: true,
   ambient_p: 0.04,
   followup_p: 0.85,
-  cooldown_sec: 25,
+  cooldown_sec: 0,
   persona: '',
   trigger_keywords: {} as Record<string, number>,
   blacklist_user_ids: [] as string[],
@@ -146,7 +146,7 @@ const runSandbox = async () => {
             v-model.number="form.ambient_p"
             class="w-full accent-sky-500 cursor-pointer"
           />
-          <div class="text-[11px] text-slate-400">群友日常聊天闲聊时，Bot 随缘参与的被动唤醒概率（默认 4%）。</div>
+          <div class="text-[11px] text-slate-400">群友日常聊天闲聊时，Bot 随缘参与的被动唤醒概率（原生配置基准）。</div>
         </div>
 
         <!-- Followup Probability (互动跟进接话) -->
@@ -163,7 +163,7 @@ const runSandbox = async () => {
             v-model.number="form.followup_p"
             class="w-full accent-indigo-500 cursor-pointer"
           />
-          <div class="text-[11px] text-slate-400">刚与 Bot 互动过的群友继续发言时，处于专注窗口内的跟进概率（默认 85%）。</div>
+          <div class="text-[11px] text-slate-400">刚与 Bot 互动过的群友继续发言时，处于专注窗口内的跟进概率（原生配置基准）。</div>
         </div>
 
         <!-- Cooldown Seconds -->
@@ -176,7 +176,7 @@ const runSandbox = async () => {
             v-model.number="form.cooldown_sec"
             class="input-dark w-full text-xs font-mono"
           />
-          <div class="text-[11px] text-slate-400">触发一次回复后的硬冷却保护时间（默认 25 秒），防刷屏。</div>
+          <div class="text-[11px] text-slate-400">触发一次回复后的硬冷却保护时间（0 为使用引擎默认防刷屏机制）。</div>
         </div>
 
         <!-- Group Name Alias -->
@@ -250,7 +250,7 @@ const runSandbox = async () => {
       <textarea
         v-model="form.persona"
         rows="5"
-        placeholder="你以固定人设作为该群群友参与日常聊天。简短自然；不适合参与时保持沉默..."
+        placeholder="自定义分群专用人设。未配置时自动继承原生全局默认人设（如东云绘名设定）..."
         class="input-dark w-full text-xs font-mono leading-relaxed"
       ></textarea>
     </div>

@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS dash_global_kv (
 INSERT OR IGNORE INTO dash_global_kv (key, value_int, value_text, updated_at) VALUES
 ('global_autochat_enabled', 1, 'true', 0),
 ('config_watermark', 1, '', 0),
-('llm_provider_config', 0, '{"base_url":"","model":"gg:gemini-3.8-flash","api_key_encrypted":""}', 0);
+('llm_provider_config', 0, '{"base_url":"","model":"","api_key_encrypted":""}', 0);
 
 -- 2. 一次性登录票据表 (Chat-to-Web OTT Flow)
 CREATE TABLE IF NOT EXISTS dash_auth_tickets (
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS dash_group_config (
     enabled             INTEGER NOT NULL DEFAULT 1,    -- 0: 禁用, 1: 启用
     ambient_p           REAL NOT NULL DEFAULT 0.04,    -- 基础闲聊随缘唤醒概率 (0.00 ~ 1.00)
     followup_p          REAL NOT NULL DEFAULT 0.85,    -- 互动跟进唤醒概率 (0.00 ~ 1.00)
-    cooldown_sec        INTEGER NOT NULL DEFAULT 25,   -- 连续回复冷却秒数
+    cooldown_sec        INTEGER NOT NULL DEFAULT 0,    -- 连续回复冷却秒数
     trigger_keywords    TEXT NOT NULL DEFAULT '{}',    -- JSON 字典: {"关键词": 0.2, "阻断词": -1.0}
     persona             TEXT NOT NULL DEFAULT '',      -- 分群专用人设 System Prompt
     blacklist_user_ids  TEXT NOT NULL DEFAULT '[]',    -- 忽略的群成员 QQ 号 JSON 数组

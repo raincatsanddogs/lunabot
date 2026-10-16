@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from ..core.native_config import native_config_loader
 from ..core.etag import compute_group_config_etag, is_etag_match, not_modified_response
 from ..core.rbac import SessionUser, require_group_access, require_superuser
 from ..db.adapter import adapter
@@ -30,6 +31,8 @@ router = APIRouter(prefix="/api/v1", tags=["Groups"])
 async def get_global(user: SessionUser = Depends(require_superuser), conn=Depends(get_readonly_db)):
     """Fetch global Autochat status and LLM provider settings (Superuser only)."""
     enabled, watermark, llm_cfg = await get_global_state(conn)
+    if not llm_cfg.get("model"):
+        llm_cfg = {**llm_cfg, "model": native_config_loader.get_default_model()}
     return GlobalStateResponse(
         global_enabled=enabled, config_watermark=watermark, llm_provider_config=llm_cfg
     )
@@ -62,20 +65,12 @@ async def get_group_config(
     """Fetch complete group configuration with Weak ETag 304 negotiation."""
     config = await get_group_config_by_gid(conn, gid)
     if not config:
-        # Default placeholder if not yet customized
+        # Dynamic defaults inherited from native autochat.yaml configuration
         exact_scope = await adapter.resolve_scope(conn, gid) or f"bot:{gid}"
+        defaults = native_config_loader.get_default_group_config(gid)
         config = GroupConfigDetail(
             scope=exact_scope,
-            group_id=str(gid),
-            group_name_cache=f"群 {gid}",
-            enabled=True,
-            ambient_p=0.04,
-            followup_p=0.85,
-            cooldown_sec=25,
-            trigger_keywords={},
-            persona="",
-            blacklist_user_ids=[],
-            updated_at=0,
+            **defaults,
         )
 
     etag = compute_group_config_etag(gid, config.updated_at)
@@ -117,9 +112,10 @@ async def sandbox_eval(
     Strictly zero LLM calls and zero QQ messages sent.
     """
     config = await get_group_config_by_gid(conn, gid)
-    ambient_p = config.ambient_p if config else 0.04
-    followup_p = config.followup_p if config else 0.85
-    keywords = config.trigger_keywords if config else {}
+    defaults = native_config_loader.get_default_group_config(gid) if not config else None
+    ambient_p = config.ambient_p if config else defaults["ambient_p"]
+    followup_p = config.followup_p if config else defaults["followup_p"]
+    keywords = config.trigger_keywords if config else defaults["trigger_keywords"]
     blacklist = config.blacklist_user_ids if config else []
 
     # 1. Blacklist check

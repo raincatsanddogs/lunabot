@@ -24,7 +24,7 @@ class GroupConfig:
     enabled: bool = True
     ambient_p: float = 0.04
     followup_p: float = 0.85
-    cooldown_sec: int = 25
+    cooldown_sec: int = 0
     trigger_keywords: Dict[str, float] = field(default_factory=dict)
     persona: str = ""
     blacklist_user_ids: List[str] = field(default_factory=list)

@@ -114,7 +114,7 @@ class AutoChatBridge:
         role: str,
         allowed_groups: List[str],
         allowed_scopes: Optional[List[str]] = None,
-        base_url: str = "http://127.0.0.1:18088",
+        base_url: Optional[str] = None,
     ) -> str:
         """Issue an OTT ticket link with URL hash fragment."""
         return cls.get().ticket_issuer.issue_ticket(

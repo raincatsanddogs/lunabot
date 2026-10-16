@@ -1,0 +1,24 @@
+# LunaBot Autochat Dashboard 独立服务配置文件
+# 可拷贝至 config/chat/autochat_dashboard.yaml 并根据实际运行环境修改
+
+# 服务监听地址与端口
+host: "0.0.0.0"
+port: 18088
+
+# 共享 Autochat SQLite 数据库文件绝对或相对路径
+db_path: "data/chat/autochat/engine/autochat.sqlite"
+
+# 外部访问公网完整 URL (用于生成 QQ 私聊 /panel 登录链接)
+# 留空时自动回退为 http://127.0.0.1:{port}
+# 若使用 Cloudflare / Nginx 反向代理或域名访问，请填写完整 URL，例如：https://dashboard.example.com
+public_url: ""
+
+# 安全与 Cookie 设置
+# 若通过 HTTPS 域名访问，建议设为 true；本地/内网调试直连时保持 false
+cookie_secure: false
+
+# 鉴权 JWT Token 密钥与过期时间
+jwt_algorithm: "HS256"
+jwt_expire_seconds: 7200 # 2小时
+# jwt_secret 留空时每次启动自动生成随机密钥；可填写固定随机字符串以保证服务重启后已登录会话依然有效
+jwt_secret: ""
