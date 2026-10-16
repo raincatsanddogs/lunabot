@@ -108,7 +108,7 @@ async def handle_dashboard_panel(ctx: HandlerContext):
     try:
         from src.services.autochat_dashboard.server.config import settings
 
-        base_url = f"http://127.0.0.1:{settings.PORT}"
+        base_url = (settings.PUBLIC_URL or f"http://127.0.0.1:{settings.PORT}").rstrip("/")
         ticket_url = AutoChatBridge.issue_ticket(
             user_id=str(user_id),
             role=role,
