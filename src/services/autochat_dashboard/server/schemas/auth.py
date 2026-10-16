@@ -14,6 +14,7 @@ class SessionUserResponse(BaseModel):
     role: str
     allowed_groups: List[str]
     allowed_scopes: List[str]
+    token: Optional[str] = None
 
 
 class GlobalStateResponse(BaseModel):

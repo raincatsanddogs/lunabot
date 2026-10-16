@@ -3,6 +3,7 @@ export interface SessionUser {
   role: 'superuser' | 'group_admin';
   allowed_groups: string[];
   allowed_scopes: string[];
+  token?: string;
 }
 
 export interface GroupSummary {

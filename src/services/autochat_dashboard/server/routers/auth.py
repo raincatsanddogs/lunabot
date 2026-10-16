@@ -44,14 +44,15 @@ async def exchange_ticket(
         }
     )
 
-    # 4. Write HttpOnly SameSite=Strict cookie
-    set_auth_cookie(response, token)
+    # 4. Write HttpOnly SameSite=Lax cookie
+    set_auth_cookie(response, token, request=request)
 
     return SessionUserResponse(
         user_id=user_data["user_id"],
         role=user_data["role"],
         allowed_groups=user_data["allowed_groups"],
         allowed_scopes=user_data["allowed_scopes"],
+        token=token,
     )
 
 

@@ -27,6 +27,9 @@ export function useAuth() {
           method: 'POST',
           body: JSON.stringify({ ticket: rawTicket }),
         });
+        if (user.token && typeof window !== 'undefined') {
+          sessionStorage.setItem('lunabot_auth_token', user.token);
+        }
         currentUser.value = user;
         authLoading.value = false;
         return;
@@ -50,12 +53,18 @@ export function useAuth() {
     try {
       await apiFetch('/api/v1/auth/logout', { method: 'POST' });
     } catch {}
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('lunabot_auth_token');
+    }
     currentUser.value = null;
     clearEtagCache();
   };
 
   onMounted(() => {
     window.addEventListener('auth:expired', () => {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('lunabot_auth_token');
+      }
       currentUser.value = null;
     });
   });

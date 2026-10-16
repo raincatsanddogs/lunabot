@@ -45,15 +45,21 @@ def verify_csrf(request: Request) -> None:
             )
 
 
-def set_auth_cookie(response: Response, token: str) -> None:
+def set_auth_cookie(response: Response, token: str, request: Optional[Request] = None) -> None:
     """Set secure HttpOnly authentication cookie."""
+    secure = settings.COOKIE_SECURE
+    if request is not None:
+        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        # If secure is required globally, only force it when actually served over https or not on localhost
+        secure = settings.COOKIE_SECURE and is_https
+
     response.set_cookie(
         key=settings.COOKIE_NAME,
         value=token,
         max_age=settings.JWT_EXPIRE_SECONDS,
         httponly=True,
-        secure=settings.COOKIE_SECURE,
-        samesite="strict",
+        secure=secure,
+        samesite="lax",
         path="/",
     )
 
@@ -64,6 +70,5 @@ def clear_auth_cookie(response: Response) -> None:
         key=settings.COOKIE_NAME,
         path="/",
         httponly=True,
-        secure=settings.COOKIE_SECURE,
-        samesite="strict",
+        samesite="lax",
     )

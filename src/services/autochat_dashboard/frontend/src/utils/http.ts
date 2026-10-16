@@ -14,8 +14,12 @@ export async function apiFetch<T>(url: string, options: RequestInit = {}): Promi
   const method = (options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
 
-  // 1. Mandatory CSRF protection header
+  // 1. Mandatory CSRF protection header & Bearer token fallback
   headers.set('X-Requested-With', 'LunaDashClient');
+  const token = typeof window !== 'undefined' ? sessionStorage.getItem('lunabot_auth_token') : null;
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
 
   if (options.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');

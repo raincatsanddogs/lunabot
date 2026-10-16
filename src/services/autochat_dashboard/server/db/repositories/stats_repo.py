@@ -70,10 +70,10 @@ async def get_overview_stats(
             pass  # If trace table not present in test env
 
     # 3. Query group counts
-    async with conn.execute("SELECT COUNT(*), COUNT(CASE WHEN enabled = 1 THEN 1 END) FROM dash_group_config") as cur:
-        grow = await cur.fetchone()
-        groups_count = int(grow[0]) if grow else 0
-        active_groups_count = int(grow[1]) if grow else 0
+    from .config_repo import list_group_summaries
+    summaries = await list_group_summaries(conn, allowed_groups)
+    groups_count = len(summaries)
+    active_groups_count = sum(1 for g in summaries if g.enabled)
 
     return OverviewStatsResponse(
         today_total_tokens=p_tokens + c_tokens,
