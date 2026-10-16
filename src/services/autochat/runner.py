@@ -143,6 +143,9 @@ async def run_turn(engine, scope, events, batch_id):
     engine.task_settings.set(copy.deepcopy(engine._settings))
     engine.task_revision.set(engine.store.revision(scope))
     started = time.monotonic()
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    last_model = ""
     batch = engine.store.db.execute('SELECT value FROM batches WHERE id=?', (batch_id,)).fetchone()
     generation = json.loads(batch[0]).get('generation', 0) if batch else 0
     journal = engine.store.get('turn:' + batch_id, {
@@ -225,6 +228,10 @@ async def run_turn(engine, scope, events, batch_id):
                     await engine.prepare_context(scope, force=True, model=next_model, required_ids=journal['consumed'])
                     continue
                 engine.mark_model_available(model)
+                last_model = model
+                usage = getattr(result, 'usage', {}) or {}
+                total_prompt_tokens += int(usage.get('input_tokens') or usage.get('prompt_tokens') or 0)
+                total_completion_tokens += int(usage.get('output_tokens') or usage.get('completion_tokens') or 0)
                 engine.trace(scope, 'model_usage', {'task': 'chat', 'usage': result.usage, 'finish_reason': result.finish_reason})
                 engine.trace(scope, 'model_response', {'batch_id': batch_id, 'round': index, 'model': model, 'assistant_message': result.assistant_message})
                 st = engine.store.state(scope)
@@ -366,6 +373,67 @@ async def run_turn(engine, scope, events, batch_id):
                 journal.pop('active')
                 save(engine, scope, batch_id, journal)
             engine.store.mark_handled(engine.store.events(scope, ids=journal['consumed'], limit=100000))
+            sent_results = engine.send_results(scope, batch_id)
+            sent_count = sum(r['state'] == 'sent' for r in sent_results)
+            latency_sec = time.monotonic() - started
             engine.trace(scope, 'turn_complete', {'batch_id': batch_id,
-                'sent_count': sum(r['state'] == 'sent' for r in engine.send_results(scope, batch_id)),
-                'latency_wall_seconds': time.monotonic() - started})
+                'sent_count': sent_count,
+                'latency_wall_seconds': latency_sec})
+
+            # Record audit telemetry to AutoChatBridge non-blockingly
+            try:
+                from src.services.autochat_dashboard.bridge import AutoChatBridge
+                # Collect sent text from actions
+                sent_texts = []
+                for action_row in engine.store.db.execute(
+                    "SELECT payload FROM actions WHERE scope=? AND id LIKE ? AND state='sent'",
+                    (scope.key, batch_id + ':%')
+                ).fetchall():
+                    try:
+                        p = json.loads(action_row['payload'])
+                        for seg in p.get('segments', []):
+                            if seg.get('type') == 'text' and seg.get('data', {}).get('text'):
+                                sent_texts.append(seg['data']['text'])
+                    except Exception:
+                        pass
+                bot_reply = "\n".join(sent_texts)
+
+                # Fetch trigger batch decision details
+                batch_val = {}
+                try:
+                    b_row = engine.store.db.execute("SELECT value FROM batches WHERE id=?", (batch_id,)).fetchone()
+                    if b_row and b_row[0]:
+                        batch_val = json.loads(b_row[0])
+                except Exception:
+                    pass
+
+                trigger_ev = events[-1] if events else None
+                context_digest = "\n".join(
+                    f"{getattr(e, 'nickname', '') or e.speaker_id}: {e.text}" for e in events
+                )
+
+                AutoChatBridge.record_audit_nowait(
+                    scope=scope.key,
+                    group_id=scope.group_id,
+                    trigger_user_id=trigger_ev.speaker_id if trigger_ev else "",
+                    trigger_user_name=getattr(trigger_ev, "nickname", "") if trigger_ev else "",
+                    decision="replied" if sent_count > 0 else "silent",
+                    probability=float(batch_val.get("probability", 1.0)),
+                    draw=float(batch_val.get("draw", 0.0)),
+                    details={
+                        "batch_id": batch_id,
+                        "reason": batch_val.get("reason", "unknown"),
+                        "matched_keywords": batch_val.get("matched_keywords", {}),
+                        "rounds": journal.get("next_round", 1),
+                        "sent_count": sent_count,
+                    },
+                    context_digest=context_digest,
+                    bot_reply=bot_reply,
+                    model_used=last_model,
+                    prompt_tokens=total_prompt_tokens,
+                    completion_tokens=total_completion_tokens,
+                    latency_ms=int(latency_sec * 1000),
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger("AutochatDashboard.Runner").warning(f"Failed to record audit telemetry: {e}")

@@ -149,3 +149,7 @@ src/private/
 
 test/
 tests/
+
+#JavaScript
+
+node_modules/

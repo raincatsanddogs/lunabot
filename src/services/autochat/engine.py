@@ -85,6 +85,12 @@ class Engine(SendActions):
                     }
                 )
             store.save_state(scope, state)
+        try:
+            from src.services.autochat_dashboard.bridge import AutoChatBridge
+            AutoChatBridge.bootstrap(self.store.root / "autochat.sqlite")
+            AutoChatBridge.start_background()
+        except Exception:
+            pass
 
     def trace(self, scope, kind, value):
         self.store.trace(self.clock.now(), scope, kind, value)
@@ -94,6 +100,13 @@ class Engine(SendActions):
         return self.task_settings.get() or self._settings
 
     def persona(self, scope):
+        try:
+            from src.services.autochat_dashboard.bridge import AutoChatBridge
+            dash_cfg = AutoChatBridge.get_group_config(scope.group_id, scope.bot_id)
+            if dash_cfg and dash_cfg.persona and dash_cfg.persona.strip():
+                return dash_cfg.persona.strip()
+        except Exception:
+            pass
         return self.settings.personas.get(scope.group_id, self.settings.persona)
 
     def update_settings(self, settings):
@@ -348,6 +361,23 @@ class Engine(SendActions):
                 )
                 self.store.db.commit()
                 continue
+
+            # AutoChat Dashboard global switch & per-group dynamic config override
+            dash_cfg = None
+            try:
+                from src.services.autochat_dashboard.bridge import AutoChatBridge
+                if not AutoChatBridge.is_global_enabled():
+                    continue
+                dash_cfg = AutoChatBridge.get_group_config(scope.group_id, scope.bot_id)
+            except Exception:
+                dash_cfg = None
+
+            if dash_cfg is not None and not dash_cfg.enabled:
+                pending_ev = self.store.events(scope, pending=True, limit=10000)
+                if pending_ev:
+                    self.store.mark_handled(pending_ev)
+                continue
+
             if scope.key not in self.summary_tasks and self.summary_due(scope):
                 self.summary_tasks[scope.key] = asyncio.create_task(self.consolidate(scope))
             if scope.key in self.tasks:
@@ -360,6 +390,17 @@ class Engine(SendActions):
             events = [e for e in events if e not in ignore]
             if not events:
                 continue
+
+            # Blacklist filtering from dashboard config
+            if dash_cfg and dash_cfg.blacklist_user_ids:
+                bl_set = set(str(u) for u in dash_cfg.blacklist_user_ids)
+                bl_events = [e for e in events if str(e.speaker_id) in bl_set]
+                if bl_events:
+                    self.store.mark_handled(bl_events)
+                    events = [e for e in events if str(e.speaker_id) not in bl_set]
+                if not events:
+                    continue
+
             unfinished = self.store.db.execute(
                 "SELECT id,value FROM batches WHERE scope=? AND status IN ('pending','running') ORDER BY rowid LIMIT 1",
                 (scope.key,),
@@ -394,21 +435,48 @@ class Engine(SendActions):
                 e.speaker_id in policy["focus_user_ids"] and not addressed_elsewhere(self, e)
                 for e in events
             )
+            eff_ambient_p = (
+                dash_cfg.ambient_p
+                if (dash_cfg is not None and dash_cfg.ambient_p is not None)
+                else policy["ambient_p"]
+            )
+            eff_followup_p = (
+                dash_cfg.followup_p
+                if (dash_cfg is not None and dash_cfg.followup_p is not None)
+                else policy["followup_p"]
+            )
             base_probability = (
-                1.0 if direct else policy["followup_p"] if followup else policy["ambient_p"]
+                1.0 if direct else eff_followup_p if followup else eff_ambient_p
             )
             reason = 'direct' if direct else 'followup' if followup else 'ambient'
 
-            # 关键词扫描与增量计算
+            # 关键词扫描与增量计算 (整合 dashboard 自定义词表)
             matched_keywords = {}
             batch_text = "\n".join(e.text for e in events if e.speaker_id != scope.bot_id).lower()
-            for kw, delta in self.settings.trigger_keywords.items():
+            eff_keywords = dict(self.settings.trigger_keywords)
+            if dash_cfg and dash_cfg.trigger_keywords:
+                eff_keywords.update(dash_cfg.trigger_keywords)
+            for kw, delta in eff_keywords.items():
                 if kw.lower() in batch_text:
                     matched_keywords[kw] = delta
             keyword_delta = sum(matched_keywords.values())
             hard_blocked = any(delta <= -1.0 for delta in matched_keywords.values())
 
-            if hard_blocked:
+            # 冷却判定 (非 direct 场景下校验上次发言间隔)
+            in_cooldown = False
+            eff_cooldown = dash_cfg.cooldown_sec if (dash_cfg is not None and dash_cfg.cooldown_sec is not None) else 0
+            if eff_cooldown > 0 and not direct:
+                row = self.store.db.execute(
+                    "SELECT MAX(time) FROM events WHERE scope=? AND speaker=?",
+                    (scope.key, scope.bot_id),
+                ).fetchone()
+                if row and row[0] is not None and (self.clock.now() - float(row[0]) < eff_cooldown):
+                    in_cooldown = True
+
+            if in_cooldown:
+                probability = 0.0
+                reason = 'cooldown'
+            elif hard_blocked:
                 probability = 0.0
             elif direct:
                 probability = 1.0
@@ -428,6 +496,8 @@ class Engine(SendActions):
                     "matched_keywords": matched_keywords,
                     "wake": draw < probability,
                     "reason": reason,
+                    "in_cooldown": in_cooldown,
+                    "hard_blocked": hard_blocked,
                     "message_ids": [e.message_id for e in events],
                 },
             )
@@ -435,6 +505,32 @@ class Engine(SendActions):
             if not decision["wake"]:
                 self.store.mark_handled(events)
                 self.store.batch_done(batch_id, "silent")
+                try:
+                    from src.services.autochat_dashboard.bridge import AutoChatBridge
+                    trigger_ev = events[-1] if events else None
+                    context_digest = "\n".join(
+                        f"{getattr(e, 'nickname', '') or e.speaker_id}: {e.text}" for e in events
+                    )
+                    AutoChatBridge.record_audit_nowait(
+                        scope=scope.key,
+                        group_id=scope.group_id,
+                        trigger_user_id=trigger_ev.speaker_id if trigger_ev else "",
+                        trigger_user_name=getattr(trigger_ev, "nickname", "") if trigger_ev else "",
+                        decision="silent",
+                        probability=float(decision.get("probability", 0.0)),
+                        draw=float(decision.get("draw", 0.0)),
+                        details={
+                            "batch_id": batch_id,
+                            "reason": reason,
+                            "base_probability": base_probability,
+                            "matched_keywords": matched_keywords,
+                            "hard_blocked": hard_blocked,
+                            "in_cooldown": in_cooldown,
+                        },
+                        context_digest=context_digest,
+                    )
+                except Exception:
+                    pass
             else:
                 effective_keywords = decision.get("matched_keywords", matched_keywords)
                 if any(delta > 0 for delta in effective_keywords.values()):
