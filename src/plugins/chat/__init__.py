@@ -16,6 +16,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from ..record.sql import query_recent_msg
 from ..code.run import run as run_code
 from .autochat import *
+from .autochat_dashboard import *
 
 
 config = Config('chat.chat')
