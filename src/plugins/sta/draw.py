@@ -1,6 +1,9 @@
 from matplotlib import pyplot as plt
 from datetime import datetime, timedelta
+from pathlib import Path
 import matplotlib.dates as mdates
+from matplotlib.ticker import FuncFormatter
+import matplotlib.font_manager
 import matplotlib
 import jieba
 import jieba.posseg as pseg
@@ -18,8 +21,50 @@ FONT_NAME = global_config.get("font.name")
 FONT_PATH = global_config.get("font.path")
 
 plt.switch_backend('agg')
-matplotlib.rcParams['font.family'] = [FONT_NAME]
-matplotlib.rcParams['axes.unicode_minus'] = False   
+
+def _init_sta_fonts():
+    global FONT_PATH
+
+    project_root = Path(__file__).resolve().parents[3]
+    candidate_paths = [
+        global_config.get("font.path"),
+        "data/utils/fonts/SourceHanSansSC-Regular.otf",
+        "data/utils/fonts/SourceHanSansCN-Regular.otf",
+    ]
+
+    resolved_font_path = None
+    for path_str in candidate_paths:
+        if not path_str:
+            continue
+        p = Path(path_str)
+        if p.is_file():
+            resolved_font_path = str(p.resolve())
+            break
+        root_p = project_root / path_str
+        if root_p.is_file():
+            resolved_font_path = str(root_p.resolve())
+            break
+
+    resolved_font_name = None
+    if resolved_font_path:
+        matplotlib.font_manager.fontManager.addfont(resolved_font_path)
+        resolved_font_name = matplotlib.font_manager.FontProperties(fname=resolved_font_path).get_name()
+        FONT_PATH = resolved_font_path
+
+    font_families = [
+        resolved_font_name,
+        FONT_NAME,
+        'Source Han Sans SC',
+        'Source Han Sans CN',
+        'Microsoft YaHei',
+        'SimHei',
+        'sans-serif',
+    ]
+    matplotlib.rcParams['font.family'] = list(dict.fromkeys([f for f in font_families if f]))
+
+
+_init_sta_fonts()
+matplotlib.rcParams['axes.unicode_minus'] = False
 
 
 def get_colors():
@@ -204,7 +249,7 @@ def draw_plot(gid, date_str, ax, recs, interval, topk_user, topk_name):
     #     ax.plot(tx, cnts[i][1:-1], label=topk_name[i], linewidth=0.7, color=cmap[i])
 
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%k'))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: str(mdates.num2date(x).hour)))
     plt.xticks(fontsize=8)
     plt.yticks(fontsize=8)
     plt.legend(fontsize=8)
