@@ -8,7 +8,12 @@ const currentGroupId = ref<string | null>(null);
 const currentConfig = ref<GroupConfigDetail | null>(null);
 const loadingConfig = ref(false);
 const savingConfig = ref(false);
-const activeTab = ref<'config' | 'memories' | 'stickers' | 'sandbox'>('config');
+const activeTab = ref<'config' | 'memories' | 'stickers' | 'sandbox' | 'audit'>('config');
+
+// Responsive layout states
+const sidebarOpen = ref(false);
+const sidebarCollapsed = ref(false);
+const auditFeedCollapsed = ref(false);
 
 export function useDashboardState() {
   const loadBootstrap = async () => {
@@ -25,6 +30,8 @@ export function useDashboardState() {
   };
 
   const selectGroup = async (gid: string) => {
+    // Automatically close mobile drawer when selecting a group
+    sidebarOpen.value = false;
     currentGroupId.value = gid;
     loadingConfig.value = true;
     try {
@@ -81,6 +88,18 @@ export function useDashboardState() {
     }
   };
 
+  const toggleSidebarOpen = () => {
+    sidebarOpen.value = !sidebarOpen.value;
+  };
+
+  const toggleSidebarCollapsed = () => {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+  };
+
+  const toggleAuditFeedCollapsed = () => {
+    auditFeedCollapsed.value = !auditFeedCollapsed.value;
+  };
+
   return {
     bootstrap,
     currentGroupId,
@@ -88,9 +107,15 @@ export function useDashboardState() {
     loadingConfig,
     savingConfig,
     activeTab,
+    sidebarOpen,
+    sidebarCollapsed,
+    auditFeedCollapsed,
     loadBootstrap,
     selectGroup,
     saveConfig,
     toggleGlobalEnabled,
+    toggleSidebarOpen,
+    toggleSidebarCollapsed,
+    toggleAuditFeedCollapsed,
   };
 }

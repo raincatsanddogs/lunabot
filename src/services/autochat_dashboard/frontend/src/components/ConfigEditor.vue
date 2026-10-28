@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { useDashboardState } from '../composables/useDashboardState';
-import { useFeedback, toast } from '../composables/useFeedback';
+import { toast } from '../composables/useFeedback';
 import { apiFetch } from '../utils/http';
 import type { SandboxEvalResult } from '../types/api';
 
@@ -108,11 +108,11 @@ const runSandbox = async () => {
 
 <template>
   <div v-if="currentConfig" class="flex-1 overflow-y-auto w-full">
-    <div class="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
+    <div class="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       <!-- Header info & Enable switch -->
-      <div class="card-panel flex items-center justify-between">
+      <div class="card-panel flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+          <h2 class="text-base font-bold text-slate-800 flex flex-wrap items-center gap-2">
             <span>{{ form.group_name_cache || '未命名群聊' }}</span>
             <span class="text-xs font-mono text-slate-400">({{ currentConfig.group_id }})</span>
           </h2>
@@ -120,12 +120,12 @@ const runSandbox = async () => {
             Exact Scope: <span class="text-sky-600 font-semibold">{{ currentConfig.scope }}</span>
           </div>
         </div>
-        <div class="flex items-center gap-3">
-          <label class="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer select-none">
             <input type="checkbox" v-model="form.enabled" class="accent-sky-600 w-4 h-4 cursor-pointer" />
             <span>{{ form.enabled ? '本群接话启用' : '本群已静默' }}</span>
           </label>
-          <button @click="handleSave" :disabled="savingConfig" class="btn-primary">
+          <button @click="handleSave" :disabled="savingConfig" class="btn-primary whitespace-nowrap">
             {{ savingConfig ? '正在保存...' : '保存策略' }}
           </button>
         </div>
@@ -137,7 +137,7 @@ const runSandbox = async () => {
           🎲 原生唤醒概率与冷却参数 (1:1 Native Trigger)
         </h3>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
           <!-- Ambient Probability (基础闲聊接话) -->
           <div class="space-y-1.5">
             <div class="flex justify-between text-xs">
@@ -201,7 +201,7 @@ const runSandbox = async () => {
 
       <!-- Trigger Keywords Table -->
       <div class="card-panel space-y-3">
-        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div class="flex flex-wrap items-center justify-between border-b border-slate-200 pb-2 gap-1">
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">
             🎯 关键词权重与强阻断规则 (trigger_keywords)
           </h3>
@@ -209,14 +209,14 @@ const runSandbox = async () => {
         </div>
 
         <!-- Add keyword input -->
-        <div class="flex gap-2">
+        <div class="flex flex-wrap sm:flex-nowrap gap-2">
           <input
             type="text"
             v-model="newKw"
             placeholder="输入关键词（如：音游、猫猫、闭嘴）"
-            class="input-base flex-1 text-xs"
+            class="input-base flex-1 min-w-[140px] text-xs"
           />
-          <select v-model.number="newDelta" class="input-base text-xs w-36 font-mono">
+          <select v-model.number="newDelta" class="input-base text-xs w-full sm:w-36 font-mono">
             <option :value="0.1">+0.1 (微增)</option>
             <option :value="0.2">+0.2 (推荐)</option>
             <option :value="0.4">+0.4 (显著)</option>
@@ -224,7 +224,7 @@ const runSandbox = async () => {
             <option :value="-0.5">-0.5 (抑制)</option>
             <option :value="-1.0">-1.0 (强阻断)</option>
           </select>
-          <button @click="addKeyword" class="btn-secondary">添加词条</button>
+          <button @click="addKeyword" class="btn-secondary w-full sm:w-auto shrink-0 whitespace-nowrap">添加词条</button>
         </div>
 
         <!-- Keyword pills -->
@@ -253,7 +253,7 @@ const runSandbox = async () => {
 
       <!-- Group Persona System Prompt -->
       <div class="card-panel space-y-2">
-        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div class="flex flex-wrap items-center justify-between border-b border-slate-200 pb-2 gap-1">
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">
             🎭 分群专用人设 System Prompt (personas[group_id])
           </h3>
@@ -282,43 +282,43 @@ const runSandbox = async () => {
       </div>
 
       <!-- Sandbox Simulation Tester -->
-      <div class="bg-sky-50/40 border border-sky-200 shadow-sm rounded-xl p-5 space-y-4">
-        <div class="flex items-center justify-between border-b border-sky-200/80 pb-2">
+      <div class="bg-sky-50/40 border border-sky-200 shadow-sm rounded-xl p-4 sm:p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between border-b border-sky-200/80 pb-2 gap-1">
           <h3 class="text-xs font-bold uppercase tracking-wider text-sky-800 flex items-center gap-1.5">
             <span>🧪 意愿计算沙盒调试器 (Sandbox Eval)</span>
           </h3>
           <span class="text-[10px] text-slate-500 font-mono">内存运行 • 0 扣费 • 0 发信风控</span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
-          <div class="md:col-span-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+          <div class="sm:col-span-2">
             <input v-model="mockText" type="text" placeholder="输入模拟群友发言..." class="input-base w-full" />
           </div>
           <div>
             <input v-model="mockUserId" type="text" placeholder="模拟发送者QQ" class="input-base w-full font-mono" />
           </div>
-          <div class="flex items-center gap-3 px-1">
-            <label class="flex items-center gap-1 cursor-pointer text-slate-700">
-              <input type="checkbox" v-model="mockAt" class="accent-sky-600 w-4 h-4" />
+          <div class="flex items-center gap-3 px-1 py-1">
+            <label class="flex items-center gap-1 cursor-pointer text-slate-700 select-none">
+              <input type="checkbox" v-model="mockAt" class="accent-sky-600 w-4 h-4 cursor-pointer" />
               <span>@Bot</span>
             </label>
-            <label class="flex items-center gap-1 cursor-pointer text-slate-700">
-              <input type="checkbox" v-model="mockFollowup" class="accent-indigo-600 w-4 h-4" />
+            <label class="flex items-center gap-1 cursor-pointer text-slate-700 select-none">
+              <input type="checkbox" v-model="mockFollowup" class="accent-indigo-600 w-4 h-4 cursor-pointer" />
               <span>跟进中</span>
             </label>
           </div>
         </div>
 
         <div class="flex justify-end">
-          <button @click="runSandbox" :disabled="evalLoading" class="btn-primary">
+          <button @click="runSandbox" :disabled="evalLoading" class="btn-primary w-full sm:w-auto">
             {{ evalLoading ? '正在测算...' : '运行沙盒测算' }}
           </button>
         </div>
 
         <!-- Sandbox Result Display -->
         <div v-if="sandboxResult" class="p-3.5 bg-white rounded-lg border border-sky-200 text-xs space-y-2 shadow-xs">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-1">
+            <div class="flex flex-wrap items-center gap-2">
               <span
                 class="px-2 py-0.5 rounded font-bold text-xs border"
                 :class="
@@ -337,7 +337,7 @@ const runSandbox = async () => {
               基准: {{ sandboxResult.base_probability }} ({{ sandboxResult.reason }})
             </span>
           </div>
-          <div class="text-[11px] text-slate-700 font-mono bg-slate-50 border border-slate-100 p-2.5 rounded-lg leading-relaxed">
+          <div class="text-[11px] text-slate-700 font-mono bg-slate-50 border border-slate-100 p-2.5 rounded-lg leading-relaxed break-words">
             {{ sandboxResult.explanation }}
           </div>
         </div>
