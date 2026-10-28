@@ -1,6 +1,7 @@
-import { ref, computed } from 'vue';
-import type { BootstrapData, GroupConfigDetail, GroupConfigUpdate, GroupSummary } from '../types/api';
+import { ref } from 'vue';
+import type { BootstrapData, GroupConfigDetail, GroupConfigUpdate } from '../types/api';
 import { apiFetch } from '../utils/http';
+import { toast } from './useFeedback';
 
 const bootstrap = ref<BootstrapData | null>(null);
 const currentGroupId = ref<string | null>(null);
@@ -74,8 +75,9 @@ export function useDashboardState() {
         bootstrap.value.global_enabled = res.global_enabled;
         bootstrap.value.config_watermark = res.config_watermark;
       }
+      toast.success(res.global_enabled ? '已开启全局自动接话' : '已熔断全局自动接话');
     } catch (err: any) {
-      alert(err.message || '更新全局状态失败');
+      toast.error(err.message || '更新全局状态失败');
     }
   };
 
