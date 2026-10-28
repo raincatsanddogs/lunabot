@@ -5,7 +5,9 @@ and provides async connection context managers with row factory.
 """
 from __future__ import annotations
 
+import json
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -20,7 +22,7 @@ class DatabaseEngine:
         self.db_path = Path(db_path or os.getenv("AUTOCHAT_DB_PATH", DEFAULT_SQLITE_PATH)).resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async def _init_sqlite_pragmas(self, conn: aiosqlite.Connection) -> None:
+    async def _init_sqlite_pragmas(self, conn: aiosqlite.Connection, readonly: bool = False) -> None:
         """Inject strict concurrency and performance pragmas to eliminate SQLITE_BUSY."""
         await conn.execute("PRAGMA journal_mode = WAL;")
         await conn.execute("PRAGMA synchronous = NORMAL;")
@@ -28,6 +30,14 @@ class DatabaseEngine:
         await conn.execute("PRAGMA temp_store = MEMORY;")
         await conn.execute("PRAGMA cache_size = -16000;")  # 16MB cache
         await conn.execute("PRAGMA foreign_keys = ON;")
+
+        if not readonly:
+            await conn.create_function("audit_time", 0, lambda: time.time())
+            await conn.create_function(
+                "memory_audit",
+                0,
+                lambda: json.dumps({"origin": "dashboard"}, ensure_ascii=False, separators=(",", ":")),
+            )
 
     @asynccontextmanager
     async def connect(self, read_only: bool = False) -> AsyncGenerator[aiosqlite.Connection, None]:
@@ -49,7 +59,7 @@ class DatabaseEngine:
 
         conn.row_factory = aiosqlite.Row
         try:
-            await self._init_sqlite_pragmas(conn)
+            await self._init_sqlite_pragmas(conn, readonly=read_only)
             yield conn
         finally:
             await conn.close()

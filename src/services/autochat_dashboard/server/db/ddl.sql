@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS memory_subjects (
     PRIMARY KEY(memory_id, subject)
 );
 
+CREATE TABLE IF NOT EXISTS memory_history (
+    id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    scope TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    changed_at REAL NOT NULL,
+    audit TEXT NOT NULL,
+    PRIMARY KEY(id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_history_scope_id ON memory_history(scope, id);
+
 CREATE TABLE IF NOT EXISTS memory_guards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scope TEXT NOT NULL,
