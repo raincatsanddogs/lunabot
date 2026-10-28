@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { useDashboardState } from '../composables/useDashboardState';
 import { apiFetch } from '../utils/http';
 import type { MemoryItem, MemoryCursorResponse, StickerItem, StickerCursorResponse } from '../types/api';
-import { formatRelativeTime } from '../utils/format';
+import { formatSmartDateTime, formatFullDateTime } from '../utils/format';
 
 const { currentGroupId } = useDashboardState();
 
@@ -209,8 +209,23 @@ watch(
               <span class="text-xs text-slate-400 font-mono">v{{ item.version }}</span>
               <span class="text-xs text-slate-400 font-mono">主体: {{ item.subject_ids.join(', ') || '未关联' }}</span>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="text-[11px] text-slate-500">{{ formatRelativeTime(item.time) }}</span>
+            <div class="flex items-center gap-2 shrink-0">
+              <div v-if="item.version > 1 && item.created_at && item.created_at !== item.time" class="flex items-center gap-1.5 text-[11px]">
+                <span class="text-slate-500" :title="formatFullDateTime(item.created_at)">
+                  创建于 {{ formatSmartDateTime(item.created_at) }}
+                </span>
+                <span class="text-slate-600">•</span>
+                <span class="text-slate-400" :title="formatFullDateTime(item.time)">
+                  更新于 {{ formatSmartDateTime(item.time) }}
+                </span>
+              </div>
+              <span
+                v-else
+                class="text-[11px] text-slate-500"
+                :title="formatFullDateTime(item.time)"
+              >
+                {{ formatSmartDateTime(item.time) }}
+              </span>
               <button
                 @click.stop="deleteSingleMemory(item.id)"
                 class="text-[11px] text-slate-500 hover:text-rose-400 transition px-1 py-0.5 rounded hover:bg-rose-500/10"

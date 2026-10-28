@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useAuditStream } from '../composables/useAuditStream';
-import { formatRelativeTime } from '../utils/format';
+import { formatSmartDateTime, formatFullDateTime } from '../utils/format';
 import { parseDigestBadges, getQQUserAvatar } from '../utils/qq_media';
 
 const props = defineProps<{
@@ -74,7 +74,7 @@ const { auditLogs, sseOnline, clearLogs } = useAuditStream(ref(props.groupId));
             <div class="flex items-center gap-2 text-[11px] text-slate-500">
               <span v-if="log.prompt_tokens" class="text-sky-400/80">{{ log.prompt_tokens + log.completion_tokens }} tok</span>
               <span v-if="log.latency_ms" class="text-slate-400">{{ log.latency_ms }}ms</span>
-              <span>{{ formatRelativeTime(log.created_at) }}</span>
+              <span :title="formatFullDateTime(log.created_at)">{{ formatSmartDateTime(log.created_at) }}</span>
             </div>
           </div>
 

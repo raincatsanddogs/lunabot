@@ -91,6 +91,12 @@ export interface MemoryItem {
   created_at: number;
 }
 
+export interface MemoryCursorResponse {
+  items: MemoryItem[];
+  next_cursor?: number | null;
+  has_more?: boolean;
+}
+
 export interface StickerItem {
   id: string;
   scope: string;
@@ -106,6 +112,12 @@ export interface StickerItem {
   tone: string[];
   avoid_contexts: string[];
   persona_tags: string[];
+}
+
+export interface StickerCursorResponse {
+  items: StickerItem[];
+  next_cursor?: string | null;
+  has_more?: boolean;
 }
 
 export interface SandboxEvalResult {
