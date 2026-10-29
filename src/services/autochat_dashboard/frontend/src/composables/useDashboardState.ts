@@ -1,13 +1,19 @@
-import { ref, computed } from 'vue';
-import type { BootstrapData, GroupConfigDetail, GroupConfigUpdate, GroupSummary } from '../types/api';
+import { ref } from 'vue';
+import type { BootstrapData, GroupConfigDetail, GroupConfigUpdate } from '../types/api';
 import { apiFetch } from '../utils/http';
+import { toast } from './useFeedback';
 
 const bootstrap = ref<BootstrapData | null>(null);
 const currentGroupId = ref<string | null>(null);
 const currentConfig = ref<GroupConfigDetail | null>(null);
 const loadingConfig = ref(false);
 const savingConfig = ref(false);
-const activeTab = ref<'config' | 'memories' | 'stickers' | 'sandbox'>('config');
+const activeTab = ref<'config' | 'memories' | 'stickers' | 'sandbox' | 'audit'>('config');
+
+// Responsive layout states
+const sidebarOpen = ref(false);
+const sidebarCollapsed = ref(false);
+const auditFeedCollapsed = ref(false);
 
 export function useDashboardState() {
   const loadBootstrap = async () => {
@@ -24,6 +30,8 @@ export function useDashboardState() {
   };
 
   const selectGroup = async (gid: string) => {
+    // Automatically close mobile drawer when selecting a group
+    sidebarOpen.value = false;
     currentGroupId.value = gid;
     loadingConfig.value = true;
     try {
@@ -74,9 +82,22 @@ export function useDashboardState() {
         bootstrap.value.global_enabled = res.global_enabled;
         bootstrap.value.config_watermark = res.config_watermark;
       }
+      toast.success(res.global_enabled ? '已开启全局自动接话' : '已熔断全局自动接话');
     } catch (err: any) {
-      alert(err.message || '更新全局状态失败');
+      toast.error(err.message || '更新全局状态失败');
     }
+  };
+
+  const toggleSidebarOpen = () => {
+    sidebarOpen.value = !sidebarOpen.value;
+  };
+
+  const toggleSidebarCollapsed = () => {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+  };
+
+  const toggleAuditFeedCollapsed = () => {
+    auditFeedCollapsed.value = !auditFeedCollapsed.value;
   };
 
   return {
@@ -86,9 +107,15 @@ export function useDashboardState() {
     loadingConfig,
     savingConfig,
     activeTab,
+    sidebarOpen,
+    sidebarCollapsed,
+    auditFeedCollapsed,
     loadBootstrap,
     selectGroup,
     saveConfig,
     toggleGlobalEnabled,
+    toggleSidebarOpen,
+    toggleSidebarCollapsed,
+    toggleAuditFeedCollapsed,
   };
 }
