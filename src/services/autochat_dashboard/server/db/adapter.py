@@ -241,6 +241,14 @@ class NativeTableAdapter:
         payload["deleted_by"] = operator_id
         payload["deleted_at"] = now
 
+        audit_str = json.dumps(
+            {"origin": "dashboard", "operation": "delete", "operator_id": operator_id, "time": now},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        await conn.create_function("audit_time", 0, lambda: now)
+        await conn.create_function("memory_audit", 0, lambda: audit_str)
+
         await conn.execute(
             "UPDATE memories SET status = 'deleted', version = ?, payload = ?, time = ? WHERE scope = ? AND id = ?",
             (new_version, json.dumps(payload, ensure_ascii=False), now, scope, memory_id),
